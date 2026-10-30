@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: Arial, sans-serif; margin: 0; padding: 16px; background: #f5f6f8; color: #222; }
+    .card { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 16px; max-width: 900px; margin: 0 auto 16px; }
+    h1 { font-size: 18px; margin: 0 0 12px; }
+    label { font-size: 13px; font-weight: bold; display: block; margin: 10px 0 4px; }
+    input[type=text], input[type=date], select { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; background: #fff; }
+    .row { display: flex; gap: 8px; margin-bottom: 6px; }
+    .row input { flex: 1; }
+    .row button { flex: 0 0 auto; }
+    button { padding: 8px 14px; border: 0; border-radius: 4px; cursor: pointer; font-size: 13px; }
+    .primary { background: #0b57d0; color: #fff; }
+    .secondary { background: #e3e6ea; color: #222; }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+    button:disabled { opacity: .5; cursor: default; }
+    #meta { font-size: 13px; margin-bottom: 8px; word-break: break-all; }
+    .ok { color: #137333; font-weight: bold; } .err { color: #c5221f; font-weight: bold; }
+    pre { background: #1e1e1e; color: #d4d4d4; padding: 12px; border-radius: 6px; overflow: auto; max-height: 420px; font-size: 12px; white-space: pre-wrap; word-break: break-all; margin: 0; }
+    .hint { font-size: 12px; color: #666; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Teste – API Pré-Postagem Correios</h1>
+
+    <label for="url">Endpoint</label>
+    <input type="text" id="url">
+
+    <label>Parâmetros de consulta</label>
+    <div id="params"></div>
+    <datalist id="sugestoes">
+      <option value="codigoObjeto"><option value="eTicket"><option value="id">
+      <option value="status"><option value="logisticaReversa">
+      <option value="dataInicial"><option value="dataFinal">
+      <option value="page"><option value="size">
+    </datalist>
+    <button class="secondary" onclick="addParam()">+ parâmetro</button>
+    <div class="hint">Os nomes sugeridos são exemplos; confirme os nomes exatos no Swagger do CWS. Linhas vazias são ignoradas.</div>
+
+    <div class="actions">
+      <button class="secondary" id="btnAuth" onclick="testarAuth()">Testar autenticação</button>
+      <button class="primary" id="btnConsulta" onclick="consultar()">Consultar</button>
+      <label style="margin:0;align-self:center;font-weight:normal">
+        <input type="checkbox" id="formatar" checked onchange="render()"> formatar JSON
+      </label>
+    </div>
+  </div>
+
+  <div class="card">
+    <h1>Teste – Logística Reversa (autorização de postagem)</h1>
+
+    <label for="urlRev">Endpoint do Web Service</label>
+    <input type="text" id="urlRev">
+
+    <label for="modoRev">Tipo de consulta</label>
+    <select id="modoRev" onchange="trocarModo()">
+      <option value="numero">Por número da autorização</option>
+      <option value="data">Por data de atualização</option>
+    </select>
+
+    <div id="blocoNumero">
+      <label for="numeroRev">Número da autorização (e-ticket)</label>
+      <input type="text" id="numeroRev" inputmode="numeric" placeholder="somente dígitos">
+      <label for="buscaRev">Eventos</label>
+      <select id="buscaRev">
+        <option value="H">Todos (histórico completo)</option>
+        <option value="U">Apenas o último</option>
+      </select>
+    </div>
+
+    <div id="blocoData" style="display:none">
+      <label for="dataRev">Data de atualização do status</label>
+      <input type="date" id="dataRev">
+    </div>
+
+    <label for="tipoRev">Tipo de solicitação</label>
+    <select id="tipoRev">
+      <option value="A">A – Autorização de postagem</option>
+      <option value="C">C – Coleta domiciliar</option>
+    </select>
+
+    <div class="actions">
+      <button class="primary" id="btnReversa" onclick="consultarRev()">Consultar reversa</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div id="meta" class="hint">Nenhuma requisição feita ainda.</div>
+    <pre id="saida"></pre>
+  </div>
+
+  <script>
+    let ultima = null;
+
+    google.script.run.withSuccessHandler(function (cfg) {
+      document.getElementById('url').value = cfg.urlPadrao;
+      document.getElementById('urlRev').value = cfg.urlReversa || '';
+    }).getConfigPublica();
+
+    function trocarModo() {
+      const porData = document.getElementById('modoRev').value === 'data';
+      document.getElementById('blocoNumero').style.display = porData ? 'none' : '';
+      document.getElementById('blocoData').style.display = porData ? '' : 'none';
+    }
+
+    function consultarRev() {
+      carregando(true, 'Consultando Logística Reversa...');
+      google.script.run.withSuccessHandler(onResposta).withFailureHandler(onErro).consultarReversa({
+        url: document.getElementById('urlRev').value,
+        modo: document.getElementById('modoRev').value,
+        numero: document.getElementById('numeroRev').value,
+        data: document.getElementById('dataRev').value,
+        tipoBusca: document.getElementById('buscaRev').value,
+        tipoSolicitacao: document.getElementById('tipoRev').value
+      });
+    }
+
+    function addParam(k, v) {
+      const div = document.createElement('div');
+      div.className = 'row';
+      div.innerHTML = '<input type="text" list="sugestoes" placeholder="nome" class="pk">' +
+                      '<input type="text" placeholder="valor" class="pv">' +
+                      '<button class="secondary" title="remover">✕</button>';
+      div.querySelector('.pk').value = k || '';
+      div.querySelector('.pv').value = v || '';
+      div.querySelector('button').onclick = function () { div.remove(); };
+      document.getElementById('params').appendChild(div);
+    }
+    addParam();
+
+    function lerParams() {
+      return Array.from(document.querySelectorAll('#params .row')).map(function (r) {
+        return { k: r.querySelector('.pk').value, v: r.querySelector('.pv').value };
+      });
+    }
+
+    function carregando(on, texto) {
+      document.getElementById('btnAuth').disabled = on;
+      document.getElementById('btnConsulta').disabled = on;
+      document.getElementById('btnReversa').disabled = on;
+      if (on) { document.getElementById('meta').textContent = texto; document.getElementById('saida').textContent = ''; }
+    }
+
+    function onErro(e) {
+      carregando(false);
+      ultima = null;
+      document.getElementById('meta').innerHTML = '<span class="err">Erro no Apps Script</span>';
+      document.getElementById('saida').textContent = String(e && e.message ? e.message : e);
+    }
+
+    function onResposta(r) { carregando(false); ultima = r; render(); }
+
+    function render() {
+      if (!ultima) return;
+      const ok = ultima.status >= 200 && ultima.status < 300;
+      document.getElementById('meta').innerHTML =
+        ultima.etapa + ' · <span class="' + (ok ? 'ok' : 'err') + '">HTTP ' + ultima.status + '</span><br>' +
+        '<span class="hint"></span>';
+      document.querySelector('#meta .hint').textContent = ultima.url;
+
+      let corpo = ultima.body;
+      if (document.getElementById('formatar').checked) {
+        try { corpo = JSON.stringify(JSON.parse(corpo), null, 2); } catch (e) { /* mantém texto cru */ }
+      }
+      document.getElementById('saida').textContent = corpo || '(resposta vazia)';
+    }
+
+    function testarAuth() {
+      carregando(true, 'Autenticando...');
+      google.script.run.withSuccessHandler(onResposta).withFailureHandler(onErro).testarAutenticacao();
+    }
+
+    function consultar() {
+      carregando(true, 'Consultando...');
+      google.script.run.withSuccessHandler(onResposta).withFailureHandler(onErro)
+        .consultarPrePostagens({ url: document.getElementById('url').value, params: lerParams() });
+    }
+  </script>
+</body>
+</html>
