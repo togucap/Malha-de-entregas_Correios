@@ -4,15 +4,35 @@ Projeto em **Google Apps Script (GAS)** para consultar autorizações de postage
 
 ## Arquivos
 
-- `Code.gs` — lado servidor: autenticação, chamadas às APIs, funções expostas à interface.
-- `Index.html` — interface de teste (HtmlService). Mostra a resposta crua das APIs, sem tratamento.
-- Publicação: App da Web (`doGet`) ou janela em planilha (`abrirTeste`).
+Os nomes no GitHub são os mesmos do editor do GAS (ex.: `Planilha.gs` ↔ arquivo `Planilha`). Todos os `.gs` compartilham o escopo global; não usar, no nível superior de um arquivo, constantes de outro arquivo (a ordem de carga não é garantida).
+
+- `Config.gs` — `CONFIG` (endpoints, nomes de colunas, lote/tempo), hosts permitidos e leitura das credenciais nas Propriedades do script.
+- `Auth.gs` — API Token (REST), cache do token e GET autenticado com renovação em 401.
+- `PrePostagem.gs` — consulta da Pré-Postagem e diagnóstico do OpenAPI (`listarParametrosConsulta`).
+- `Reversa.gs` — montagem/envio do SOAP de Logística Reversa (individual e em lote com `fetchAll`).
+- `ReversaParser.gs` — parser do XML (`XmlService`): uma entrada por autorização, histórico agrupado, status atual.
+- `Classificador.gs` — tipo do código pela quantidade de caracteres: 10 dígitos autorização, 13 (`AA999999999AA`) rastreio, 14 dígitos Jadlog.
+- `Planilha.gs` — menu **Correios** (`onOpen`) e atualização da aba base: lê `Autorização Postagem`, grava `Código convertido` e `Status tracking`.
+- `Interface.gs` + `Index.html` — interface de teste (HtmlService) com a resposta crua das APIs; App da Web (`doGet`) ou janela na planilha (`abrirTeste`).
+
+## Configuração
+
+Propriedades do script (Configurações do projeto > Propriedades do script): `CORREIOS_USER`, `CORREIOS_API_KEY`, `CORREIOS_CARTAO`, `CORREIOS_COD_ADMINISTRATIVO`.
+
+## Planilha base
+
+Colunas da aba: Protocolo, Pedido, Cliente Prime, Dt. autorização, Dt. postagem, Autorização Postagem, Tipo da Solicitação, Tipo abertura (+ `Código convertido` e `Status tracking`, criadas pelo script se não existirem). Colunas são localizadas pelo nome do cabeçalho (sem diferenciar acentos/maiúsculas).
+
+- Só autorizações (10 dígitos) são consultadas por enquanto; Jadlog e rastreio ficam intactos.
+- `Status tracking` = descrição mais recente entre o `objeto` e o último evento do `historico`.
+- Linhas com status final (entregue, cancelada, expirada) são puladas, salvo no "Reprocessar todas".
+- Execução limitada a ~4,5 min; se o tempo acabar, a próxima linha fica em `REVERSA_PROXIMA_LINHA` (Propriedades do script) e a execução seguinte continua dali.
 
 ## Regras do projeto
 
-- **Nunca** versionar credenciais. `USER`, `API_KEY`, `CARTAO` e `COD_ADMINISTRATIVO` hoje estão como placeholders no `CONFIG`; migrar para `PropertiesService.getScriptProperties()`.
+- **Nunca** versionar credenciais: ficam só nas Propriedades do script (ver Configuração).
 - Não registrar tokens, CNPJ, contrato ou dados de destinatários em logs, commits ou arquivos de exemplo.
-- Toda chamada HTTP usa `UrlFetchApp.fetch` com `muteHttpExceptions: true` e devolve `{ etapa, url, status, body }`.
+- Toda chamada HTTP usa `UrlFetchApp.fetch` (ou `fetchAll` em lote) com `muteHttpExceptions: true` e devolve `{ etapa, url, status, body }`.
 - Requisições REST só para `https://api.correios.com.br/`; SOAP só para os hosts em `HOSTS_REVERSA`.
 
 ## O que já foi validado (out/2026)
@@ -71,10 +91,11 @@ Número da autorização → `acompanharPedido` (SOAP) → `numero_etiqueta` →
 
 ## Próximos passos
 
-1. Mover credenciais para Script Properties.
-2. Criar parser do XML (`XmlService`) que devolva um objeto por autorização, com histórico agrupado.
-3. Consulta em lote a partir de uma planilha: ler números de autorização e gravar status, data do status, código de rastreio, data de entrega, peso e valor.
-4. Opcional: enriquecer com a API Rastro e agendar atualização (gatilho de tempo), respeitando cotas do `UrlFetchApp`.
+1. ~~Mover credenciais para Script Properties.~~ (feito)
+2. ~~Parser do XML com histórico agrupado.~~ (feito — `ReversaParser.gs`)
+3. ~~Consulta em lote a partir da planilha (código de rastreio e status).~~ (feito — `Planilha.gs`); avaliar colunas extras: data do status, data de entrega, peso e valor.
+4. Consultar os códigos de rastreio (13) na API Rastro e definir a integração Jadlog (14).
+5. Agendar atualização (gatilho de tempo em `atualizarAutorizacoes`), respeitando cotas do `UrlFetchApp`.
 
 ## Referências
 
