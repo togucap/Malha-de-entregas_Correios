@@ -59,27 +59,44 @@ function menuCancelarContinuacao() {
  * Pode ser chamada por gatilho de tempo (o objeto do evento é ignorado).
  */
 function atualizarAutorizacoes(reprocessar) {
+  return executarComLock_(reprocessar === true, false);
+}
+
+// Disparada pelos gatilhos de uso único agendados por atualizar_
+function continuarAtualizacao(e) {
+  // gatilhos de uso único continuam listados depois de disparar; apaga só o que disparou
+  removerContinuacao_(e && e.triggerUid);
+  const reprocessar = PropertiesService.getScriptProperties().getProperty(REPROCESSAR_PROP) === 'S';
+  console.log(executarComLock_(reprocessar, true));
+}
+
+function executarComLock_(reprocessar, automatico) {
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(1000)) return 'Já existe uma atualização em andamento.';
   try {
-    return atualizar_(reprocessar === true);
+    return atualizar_(reprocessar, automatico);
   } finally {
     lock.releaseLock();
   }
 }
 
-// Disparada pelo gatilho de uso único que atualizar_ agenda quando o tempo limite é atingido
-function continuarAtualizacao() {
-  removerContinuacao_(); // gatilhos de uso único continuam listados depois de disparar
-  const msg = atualizarAutorizacoes(PropertiesService.getScriptProperties().getProperty(REPROCESSAR_PROP) === 'S');
-  console.log(msg);
-}
-
-function atualizar_(reprocessar) {
+function atualizar_(reprocessar, automatico) {
   const inicio = Date.now();
   const cfg = CONFIG.PLANILHA;
+  const props = PropertiesService.getScriptProperties();
   credenciais_(); // falha antes de qualquer consulta se faltar configuração
-  removerContinuacao_(); // esta execução assume o ciclo; agenda outra se precisar
+
+  // Execuções automáticas seguidas sem gravar nenhum lote (erro ou "Tempo máximo de execução
+  // excedido") param o ciclo; o cursor fica para a próxima execução pelo menu.
+  const falhas = automatico ? Number(props.getProperty(FALHAS_PROP) || 0) : 0;
+  if (falhas >= cfg.MAX_FALHAS) {
+    removerContinuacao_();
+    props.deleteProperty(FALHAS_PROP);
+    const cursor = props.getProperty(CURSOR_PROP);
+    throw new Error('Continuação automática interrompida após ' + falhas +
+      ' execução(ões) seguida(s) sem avanço. Execute pelo menu para ' +
+      (cursor ? 'retomar da linha ' + cursor : 'recomeçar') + '.');
+  }
 
   const aba = obterAba_();
   const cab = cfg.LINHA_CABECALHO;
@@ -89,17 +106,16 @@ function atualizar_(reprocessar) {
   const colStatus = garantirColuna_(aba, cfg.COL_STATUS);
 
   const total = aba.getLastRow() - cab;
-  if (total <= 0) return 'Nenhuma linha para processar.';
+  if (total <= 0) {
+    encerrarCiclo_();
+    return 'Nenhuma linha para processar.';
+  }
 
   const codigos = aba.getRange(cab + 1, colCodigo, total, 1).getValues();
-  const rngConvertido = aba.getRange(cab + 1, colConvertido, total, 1);
-  const rngStatus = aba.getRange(cab + 1, colStatus, total, 1);
-  const convertidos = rngConvertido.getValues();
-  const status = rngStatus.getValues();
+  const convertidos = aba.getRange(cab + 1, colConvertido, total, 1).getValues();
+  const status = aba.getRange(cab + 1, colStatus, total, 1).getValues();
 
-  const props = PropertiesService.getScriptProperties();
   const primeiro = Math.max(0, Number(props.getProperty(CURSOR_PROP) || 0) - (cab + 1));
-
   const pendentes = [];
   for (let i = primeiro; i < total; i++) {
     if (classificarCodigo_(codigos[i][0]) !== TIPO_CODIGO.AUTORIZACAO) continue;
@@ -107,15 +123,22 @@ function atualizar_(reprocessar) {
     pendentes.push(i);
   }
 
+  // Rede de segurança: se o Apps Script encerrar esta execução à força, este gatilho
+  // retoma do último lote gravado. É substituído no fim normal da execução.
+  props.setProperty(FALHAS_PROP, String(falhas + 1)); // volta a 0 quando um lote é gravado
+  agendarContinuacao_(reprocessar, cfg.ESPERA_SEGURANCA_MS);
+
   let proxima = null; // índice da primeira linha ainda não consultada
   let feitas = 0;
+  let maiorLote = 0;  // duração do lote mais demorado, usada para prever o próximo
   let erro = null;
-  try {
-    for (let p = 0; p < pendentes.length; p += cfg.LOTE) {
-      const lote = pendentes.slice(p, p + cfg.LOTE);
-      proxima = lote[0];
-      if (Date.now() - inicio > cfg.TEMPO_MAXIMO_MS) break;
+  for (let p = 0; p < pendentes.length; p += cfg.LOTE) {
+    const lote = pendentes.slice(p, p + cfg.LOTE);
+    proxima = lote[0];
+    if (Date.now() - inicio + maiorLote > cfg.TEMPO_MAXIMO_MS) break;
 
+    const t0 = Date.now();
+    try {
       const numeros = lote.map(function (i) { return normalizarCodigo_(codigos[i][0]); });
       consultarReversaLote_(numeros, 'A').forEach(function (resp, k) {
         const i = lote[k];
@@ -123,14 +146,21 @@ function atualizar_(reprocessar) {
         if (res.codigo !== undefined) convertidos[i][0] = res.codigo;
         status[i][0] = res.status;
       });
-      feitas += lote.length;
-      proxima = null;
+
+      // grava a faixa do lote na hora, para não perder nada se a execução for encerrada
+      const de = lote[0], ate = lote[lote.length - 1];
+      aba.getRange(cab + 1 + de, colConvertido, ate - de + 1, 1).setValues(convertidos.slice(de, ate + 1));
+      aba.getRange(cab + 1 + de, colStatus, ate - de + 1, 1).setValues(status.slice(de, ate + 1));
+    } catch (e) {
+      erro = e;
+      break;
     }
-  } catch (e) {
-    erro = e;
-  } finally {
-    rngConvertido.setValues(convertidos);
-    rngStatus.setValues(status);
+
+    maiorLote = Math.max(maiorLote, Date.now() - t0);
+    feitas += lote.length;
+    proxima = p + cfg.LOTE < pendentes.length ? pendentes[p + cfg.LOTE] : null;
+    if (proxima !== null) props.setProperty(CURSOR_PROP, String(cab + 1 + proxima));
+    if (feitas === lote.length) props.setProperty(FALHAS_PROP, '0');
   }
 
   let msg = feitas + ' autorização(ões) consultada(s) na aba "' + aba.getName() + '".';
@@ -141,39 +171,31 @@ function atualizar_(reprocessar) {
 
   const linha = cab + 1 + proxima;
   props.setProperty(CURSOR_PROP, String(linha));
+  agendarContinuacao_(reprocessar, cfg.ESPERA_CONTINUACAO_MS);
   const espera = Math.round(cfg.ESPERA_CONTINUACAO_MS / 60000) + ' min';
 
   if (erro) {
-    // Falhas sem nenhum avanço em execuções seguidas param o ciclo (o cursor fica para a próxima execução manual)
-    const falhas = feitas > 0 ? 1 : Number(props.getProperty(FALHAS_PROP) || 0) + 1;
-    if (falhas >= cfg.MAX_FALHAS) {
-      props.deleteProperty(FALHAS_PROP);
-      throw new Error('Atualização interrompida na linha ' + linha + ' após ' + falhas +
-        ' falha(s) seguida(s): ' + (erro && erro.message ? erro.message : erro));
-    }
-    props.setProperty(FALHAS_PROP, String(falhas));
-    agendarContinuacao_(reprocessar);
-    console.warn('Falha na linha ' + linha + ': ' + (erro && erro.message ? erro.message : erro));
-    return msg + ' Falha de comunicação na linha ' + linha + '; nova tentativa automática em ~' + espera +
-      ' (' + falhas + ' de ' + cfg.MAX_FALHAS + ').';
+    const texto = erro && erro.message ? erro.message : erro;
+    console.warn('Falha na linha ' + linha + ': ' + texto);
+    return msg + ' Falha de comunicação na linha ' + linha + ' (' + texto + '); nova tentativa automática em ~' + espera + '.';
   }
-
-  props.deleteProperty(FALHAS_PROP);
-  agendarContinuacao_(reprocessar);
   return msg + ' Tempo limite atingido: a atualização continua sozinha em ~' + espera + ' a partir da linha ' + linha + '.';
 }
 
 /* ---------- Continuação automática (gatilho de tempo de uso único) ---------- */
 
-function agendarContinuacao_(reprocessar) {
+function agendarContinuacao_(reprocessar, esperaMs) {
   removerContinuacao_();
   PropertiesService.getScriptProperties().setProperty(REPROCESSAR_PROP, reprocessar ? 'S' : 'N');
-  ScriptApp.newTrigger(FUNCAO_CONTINUACAO).timeBased().after(CONFIG.PLANILHA.ESPERA_CONTINUACAO_MS).create();
+  ScriptApp.newTrigger(FUNCAO_CONTINUACAO).timeBased().after(esperaMs).create();
 }
 
-function removerContinuacao_() {
+// Sem uid, apaga todos os gatilhos de continuação; com uid, só o que disparou
+function removerContinuacao_(uid) {
   ScriptApp.getProjectTriggers().forEach(function (t) {
-    if (t.getHandlerFunction() === FUNCAO_CONTINUACAO) ScriptApp.deleteTrigger(t);
+    if (t.getHandlerFunction() !== FUNCAO_CONTINUACAO) return;
+    if (uid && t.getUniqueId() !== uid) return;
+    ScriptApp.deleteTrigger(t);
   });
 }
 

@@ -26,9 +26,10 @@ const CONFIG = {
     COL_CONVERTIDO: 'Código convertido',
     COL_STATUS: 'Status tracking',
     LOTE: 10,                         // requisições simultâneas ao Web Service
-    TEMPO_MAXIMO_MS: 4.5 * 60 * 1000, // para antes do limite de 6 min do Apps Script
-    ESPERA_CONTINUACAO_MS: 60 * 1000, // intervalo até a continuação automática
-    MAX_FALHAS: 3                     // execuções seguidas com erro e sem avanço antes de desistir
+    TEMPO_MAXIMO_MS: 4.5 * 60 * 1000,   // não inicia lote que possa passar disso (limite do Apps Script: 6 min)
+    ESPERA_CONTINUACAO_MS: 60 * 1000,   // intervalo até a continuação automática
+    ESPERA_SEGURANCA_MS: 7 * 60 * 1000, // retomada se a execução for encerrada à força pelo Apps Script
+    MAX_FALHAS: 3                       // execuções automáticas seguidas sem gravar nenhum lote antes de desistir
   }
 };
 
