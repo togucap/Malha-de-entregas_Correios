@@ -26,7 +26,10 @@ Colunas da aba: Protocolo, Pedido, Cliente Prime, Dt. autorização, Dt. postage
 - Só autorizações (10 dígitos) são consultadas por enquanto; Jadlog e rastreio ficam intactos.
 - `Status tracking` = descrição mais recente entre o `objeto` e o último evento do `historico`.
 - Linhas com status final (entregue, cancelada, expirada) são puladas, salvo no "Reprocessar todas".
-- Execução limitada a ~4,5 min; se o tempo acabar, a próxima linha fica em `REVERSA_PROXIMA_LINHA` (Propriedades do script) e a execução seguinte continua dali.
+- Execução limitada a ~4,5 min; se o tempo acabar, a próxima linha fica em `REVERSA_PROXIMA_LINHA` (Propriedades do script) e um gatilho de tempo de uso único (`continuarAtualizacao`, ~1 min) segue dali sozinho até o fim; o gatilho é apagado ao disparar e ao terminar o ciclo.
+- Erro de comunicação também agenda nova tentativa; após `MAX_FALHAS` execuções seguidas sem avanço o ciclo para (cursor mantido).
+- Menu "Cancelar continuação automática" apaga o gatilho pendente e o cursor.
+- Conta Gmail comum: gatilhos somam no máx. 90 min/dia de execução e 20 mil chamadas `UrlFetchApp`/dia (Workspace: 6 h e 100 mil).
 
 ## Regras do projeto
 
@@ -95,7 +98,7 @@ Número da autorização → `acompanharPedido` (SOAP) → `numero_etiqueta` →
 2. ~~Parser do XML com histórico agrupado.~~ (feito — `ReversaParser.gs`)
 3. ~~Consulta em lote a partir da planilha (código de rastreio e status).~~ (feito — `Planilha.gs`); avaliar colunas extras: data do status, data de entrega, peso e valor.
 4. Consultar os códigos de rastreio (13) na API Rastro e definir a integração Jadlog (14).
-5. Agendar atualização (gatilho de tempo em `atualizarAutorizacoes`), respeitando cotas do `UrlFetchApp`.
+5. Agendar atualização periódica (gatilho recorrente em `atualizarAutorizacoes`), respeitando cotas do `UrlFetchApp`.
 
 ## Referências
 

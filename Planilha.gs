@@ -7,11 +7,15 @@
  */
 
 const CURSOR_PROP = 'REVERSA_PROXIMA_LINHA';
+const REPROCESSAR_PROP = 'REVERSA_REPROCESSAR';
+const FALHAS_PROP = 'REVERSA_FALHAS';
+const FUNCAO_CONTINUACAO = 'continuarAtualizacao';
 
 function onOpen() {
   SpreadsheetApp.getUi().createMenu('Correios')
     .addItem('Atualizar autorizações de postagem', 'menuAtualizarAutorizacoes')
     .addItem('Reprocessar todas (inclusive finalizadas)', 'menuReprocessarAutorizacoes')
+    .addItem('Cancelar continuação automática', 'menuCancelarContinuacao')
     .addSeparator()
     .addItem('Tela de teste das APIs', 'abrirTeste')
     .addToUi();
@@ -29,11 +33,27 @@ function executarPeloMenu_(reprocessar) {
   }
 }
 
+function menuCancelarContinuacao() {
+  const ui = SpreadsheetApp.getUi();
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(1000)) {
+    ui.alert('Correios', 'Há uma atualização em andamento. Tente cancelar novamente em alguns minutos.', ui.ButtonSet.OK);
+    return;
+  }
+  try {
+    encerrarCiclo_();
+  } finally {
+    lock.releaseLock();
+  }
+  ui.alert('Correios', 'Continuação automática cancelada. A próxima atualização começa do início da planilha.', ui.ButtonSet.OK);
+}
+
 /**
  * Consulta no Web Service de Logística Reversa as linhas cuja coluna "Autorização Postagem"
  * contém uma autorização e grava o código de rastreio e o status atual.
  * Linhas já finalizadas (entregue, cancelada, expirada) são puladas, salvo reprocessar = true.
- * Se o tempo acabar, guarda a próxima linha e continua dali na execução seguinte.
+ * Se o tempo acabar, guarda a próxima linha e agenda continuarAtualizacao(), que segue dali
+ * sozinha até o fim da planilha.
  * Pode ser chamada por gatilho de tempo (o objeto do evento é ignorado).
  */
 function atualizarAutorizacoes(reprocessar) {
@@ -46,10 +66,18 @@ function atualizarAutorizacoes(reprocessar) {
   }
 }
 
+// Disparada pelo gatilho de uso único que atualizar_ agenda quando o tempo limite é atingido
+function continuarAtualizacao() {
+  removerContinuacao_(); // gatilhos de uso único continuam listados depois de disparar
+  const msg = atualizarAutorizacoes(PropertiesService.getScriptProperties().getProperty(REPROCESSAR_PROP) === 'S');
+  console.log(msg);
+}
+
 function atualizar_(reprocessar) {
   const inicio = Date.now();
   const cfg = CONFIG.PLANILHA;
   credenciais_(); // falha antes de qualquer consulta se faltar configuração
+  removerContinuacao_(); // esta execução assume o ciclo; agenda outra se precisar
 
   const aba = obterAba_();
   const cab = cfg.LINHA_CABECALHO;
@@ -79,6 +107,7 @@ function atualizar_(reprocessar) {
 
   let proxima = null; // índice da primeira linha ainda não consultada
   let feitas = 0;
+  let erro = null;
   try {
     for (let p = 0; p < pendentes.length; p += cfg.LOTE) {
       const lote = pendentes.slice(p, p + cfg.LOTE);
@@ -95,18 +124,62 @@ function atualizar_(reprocessar) {
       feitas += lote.length;
       proxima = null;
     }
+  } catch (e) {
+    erro = e;
   } finally {
     rngConvertido.setValues(convertidos);
     rngStatus.setValues(status);
-    if (proxima === null) props.deleteProperty(CURSOR_PROP);
-    else props.setProperty(CURSOR_PROP, String(cab + 1 + proxima));
   }
 
   let msg = feitas + ' autorização(ões) consultada(s) na aba "' + aba.getName() + '".';
-  if (proxima !== null) {
-    msg += ' Tempo limite atingido: execute novamente para continuar a partir da linha ' + (cab + 1 + proxima) + '.';
+  if (proxima === null) {
+    encerrarCiclo_();
+    return msg;
   }
-  return msg;
+
+  const linha = cab + 1 + proxima;
+  props.setProperty(CURSOR_PROP, String(linha));
+  const espera = Math.round(cfg.ESPERA_CONTINUACAO_MS / 60000) + ' min';
+
+  if (erro) {
+    // Falhas sem nenhum avanço em execuções seguidas param o ciclo (o cursor fica para a próxima execução manual)
+    const falhas = feitas > 0 ? 1 : Number(props.getProperty(FALHAS_PROP) || 0) + 1;
+    if (falhas >= cfg.MAX_FALHAS) {
+      props.deleteProperty(FALHAS_PROP);
+      throw new Error('Atualização interrompida na linha ' + linha + ' após ' + falhas +
+        ' falha(s) seguida(s): ' + (erro && erro.message ? erro.message : erro));
+    }
+    props.setProperty(FALHAS_PROP, String(falhas));
+    agendarContinuacao_(reprocessar);
+    console.warn('Falha na linha ' + linha + ': ' + (erro && erro.message ? erro.message : erro));
+    return msg + ' Falha de comunicação na linha ' + linha + '; nova tentativa automática em ~' + espera +
+      ' (' + falhas + ' de ' + cfg.MAX_FALHAS + ').';
+  }
+
+  props.deleteProperty(FALHAS_PROP);
+  agendarContinuacao_(reprocessar);
+  return msg + ' Tempo limite atingido: a atualização continua sozinha em ~' + espera + ' a partir da linha ' + linha + '.';
+}
+
+/* ---------- Continuação automática (gatilho de tempo de uso único) ---------- */
+
+function agendarContinuacao_(reprocessar) {
+  removerContinuacao_();
+  PropertiesService.getScriptProperties().setProperty(REPROCESSAR_PROP, reprocessar ? 'S' : 'N');
+  ScriptApp.newTrigger(FUNCAO_CONTINUACAO).timeBased().after(CONFIG.PLANILHA.ESPERA_CONTINUACAO_MS).create();
+}
+
+function removerContinuacao_() {
+  ScriptApp.getProjectTriggers().forEach(function (t) {
+    if (t.getHandlerFunction() === FUNCAO_CONTINUACAO) ScriptApp.deleteTrigger(t);
+  });
+}
+
+// Fim da planilha (ou cancelamento): limpa cursor, modo, contador de falhas e gatilho pendente
+function encerrarCiclo_() {
+  const props = PropertiesService.getScriptProperties();
+  [CURSOR_PROP, REPROCESSAR_PROP, FALHAS_PROP].forEach(function (k) { props.deleteProperty(k); });
+  removerContinuacao_();
 }
 
 // Converte a resposta do Web Service em { codigo, status } para a planilha
