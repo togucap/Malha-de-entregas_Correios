@@ -29,6 +29,7 @@ Colunas da aba: Protocolo, Pedido, Cliente Prime, Dt. autorização, Dt. postage
 - Execução limitada a ~4,5 min; se o tempo acabar, a próxima linha fica em `REVERSA_PROXIMA_LINHA` (Propriedades do script) e um gatilho de tempo de uso único (`continuarAtualizacao`, ~1 min) segue dali sozinho até o fim; o gatilho é apagado ao disparar e ao terminar o ciclo.
 - Erro de comunicação também agenda nova tentativa; após `MAX_FALHAS` execuções seguidas sem avanço o ciclo para (cursor mantido).
 - Menu "Cancelar continuação automática" apaga o gatilho pendente e o cursor.
+- Mensagens do menu usam `toast` (não bloqueia); não usar `ui.alert`, que trava a execução até alguém clicar em OK.
 - Conta Gmail comum: gatilhos somam no máx. 90 min/dia de execução e 20 mil chamadas `UrlFetchApp`/dia (Workspace: 6 h e 100 mil).
 
 ## Regras do projeto

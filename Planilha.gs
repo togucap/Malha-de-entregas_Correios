@@ -24,20 +24,22 @@ function onOpen() {
 function menuAtualizarAutorizacoes() { executarPeloMenu_(false); }
 function menuReprocessarAutorizacoes() { executarPeloMenu_(true); }
 
+// Avisos por toast (canto da planilha): não bloqueiam a execução nem pedem clique
 function executarPeloMenu_(reprocessar) {
-  const ui = SpreadsheetApp.getUi();
+  const ss = SpreadsheetApp.getActive();
+  ss.toast('Consultando autorizações. Se o tempo limite for atingido, a atualização continua sozinha.', 'Correios', 10);
   try {
-    ui.alert('Correios', atualizarAutorizacoes(reprocessar), ui.ButtonSet.OK);
+    ss.toast(atualizarAutorizacoes(reprocessar), 'Correios', 30);
   } catch (e) {
-    ui.alert('Correios – erro', String(e && e.message ? e.message : e), ui.ButtonSet.OK);
+    ss.toast(String(e && e.message ? e.message : e), 'Correios – erro', 60);
   }
 }
 
 function menuCancelarContinuacao() {
-  const ui = SpreadsheetApp.getUi();
+  const ss = SpreadsheetApp.getActive();
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(1000)) {
-    ui.alert('Correios', 'Há uma atualização em andamento. Tente cancelar novamente em alguns minutos.', ui.ButtonSet.OK);
+    ss.toast('Há uma atualização em andamento. Tente cancelar novamente em alguns minutos.', 'Correios', 15);
     return;
   }
   try {
@@ -45,7 +47,7 @@ function menuCancelarContinuacao() {
   } finally {
     lock.releaseLock();
   }
-  ui.alert('Correios', 'Continuação automática cancelada. A próxima atualização começa do início da planilha.', ui.ButtonSet.OK);
+  ss.toast('Continuação automática cancelada. A próxima atualização começa do início da planilha.', 'Correios', 15);
 }
 
 /**
