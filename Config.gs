@@ -25,6 +25,7 @@ const CONFIG = {
     COL_CODIGO: 'Autorização Postagem',
     COL_CONVERTIDO: 'Código convertido',
     COL_STATUS: 'Status tracking',
+    COL_DATA: 'Data Ocorrencia',
     LOTE: 10,                         // requisições simultâneas ao Web Service
     TEMPO_MAXIMO_MS: 4.5 * 60 * 1000,   // não inicia lote que possa passar disso (limite do Apps Script: 6 min)
     ESPERA_CONTINUACAO_MS: 60 * 1000,   // intervalo até a continuação automática

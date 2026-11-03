@@ -1,6 +1,6 @@
 /**
  * Integração com a planilha base: menu, leitura da coluna "Autorização Postagem"
- * e gravação das colunas "Código convertido" e "Status tracking".
+ * e gravação das colunas "Código convertido", "Status tracking" e "Data Ocorrencia".
  *
  * Fluxo por linha (tipo identificado em Classificador.gs):
  *   autorização (10 dígitos) -> Logística Reversa (SOAP): código de rastreio + status
@@ -107,6 +107,7 @@ function atualizar_(reprocessar, automatico) {
   if (!colCodigo) throw new Error('Coluna "' + cfg.COL_CODIGO + '" não encontrada na aba "' + aba.getName() + '".');
   const colConvertido = garantirColuna_(aba, cfg.COL_CONVERTIDO);
   const colStatus = garantirColuna_(aba, cfg.COL_STATUS);
+  const colData = garantirColuna_(aba, cfg.COL_DATA, 'dd/mm/yyyy');
 
   const total = aba.getLastRow() - cab;
   if (total <= 0) {
@@ -117,6 +118,13 @@ function atualizar_(reprocessar, automatico) {
   const codigos = aba.getRange(cab + 1, colCodigo, total, 1).getValues();
   const convertidos = aba.getRange(cab + 1, colConvertido, total, 1).getValues();
   const status = aba.getRange(cab + 1, colStatus, total, 1).getValues();
+  const dados = {
+    codigos: codigos,
+    convertidos: convertidos,
+    status: status,
+    datas: aba.getRange(cab + 1, colData, total, 1).getValues(),
+    fuso: aba.getParent().getSpreadsheetTimeZone()
+  };
 
   const primeiro = Math.max(0, Number(props.getProperty(CURSOR_PROP) || 0) - (cab + 1));
   const pendentes = [];
@@ -143,12 +151,13 @@ function atualizar_(reprocessar, automatico) {
 
     const t0 = Date.now();
     try {
-      processarLote_(lote, codigos, convertidos, status, reprocessar);
+      processarLote_(lote, dados, reprocessar);
 
       // grava a faixa do lote na hora, para não perder nada se a execução for encerrada
       const de = lote[0], ate = lote[lote.length - 1];
       aba.getRange(cab + 1 + de, colConvertido, ate - de + 1, 1).setValues(convertidos.slice(de, ate + 1));
       aba.getRange(cab + 1 + de, colStatus, ate - de + 1, 1).setValues(status.slice(de, ate + 1));
+      aba.getRange(cab + 1 + de, colData, ate - de + 1, 1).setValues(dados.datas.slice(de, ate + 1));
     } catch (e) {
       erro = e;
       break;
@@ -205,30 +214,33 @@ function encerrarCiclo_() {
 }
 
 /**
- * Consulta as linhas do lote e altera convertidos/status (arrays da planilha) no lugar.
+ * Consulta as linhas do lote e altera dados.convertidos/status/datas (arrays da planilha) no lugar.
  * 1) Logística Reversa para autorizações ainda sem código de rastreio (ou todas, ao reprocessar).
  * 2) API Rastro para todo código disponível (convertido ou o da própria coluna): o último evento
- *    do rastro é o veredito do "Status tracking". Se o rastro falhar, vale o status da reversa.
+ *    do rastro é o veredito do "Status tracking" (resumido, ver Status.gs) e da "Data Ocorrencia".
+ *    Se o rastro falhar, valem o status e a data da reversa.
  */
-function processarLote_(lote, codigos, convertidos, status, reprocessar) {
-  const tipo = function (i) { return classificarCodigo_(codigos[i][0]); };
+function processarLote_(lote, dados, reprocessar) {
+  const tipo = function (i) { return classificarCodigo_(dados.codigos[i][0]); };
 
   const paraReversa = lote.filter(function (i) {
-    return tipo(i) === TIPO_CODIGO.AUTORIZACAO && (reprocessar || !codigosDaCelula_(convertidos[i][0]).length);
+    return tipo(i) === TIPO_CODIGO.AUTORIZACAO && (reprocessar || !codigosDaCelula_(dados.convertidos[i][0]).length);
   });
   if (paraReversa.length) {
-    const numeros = paraReversa.map(function (i) { return normalizarCodigo_(codigos[i][0]); });
+    const numeros = paraReversa.map(function (i) { return normalizarCodigo_(dados.codigos[i][0]); });
     consultarReversaLote_(numeros, 'A').forEach(function (resp, k) {
       const i = paraReversa[k];
       const res = resultadoAutorizacao_(numeros[k], resp);
-      if (res.codigo !== undefined) convertidos[i][0] = res.codigo;
-      status[i][0] = res.status;
+      if (res.codigo !== undefined) dados.convertidos[i][0] = res.codigo;
+      dados.status[i][0] = res.status;
+      const data = dataOcorrencia_(res.data, dados.fuso);
+      if (data) dados.datas[i][0] = data;
     });
   }
 
   const alvos = []; // { i, codigo }
   lote.forEach(function (i) {
-    const cods = tipo(i) === TIPO_CODIGO.RASTREIO ? [normalizarCodigo_(codigos[i][0])] : codigosDaCelula_(convertidos[i][0]);
+    const cods = tipo(i) === TIPO_CODIGO.RASTREIO ? [normalizarCodigo_(dados.codigos[i][0])] : codigosDaCelula_(dados.convertidos[i][0]);
     cods.forEach(function (c) { alvos.push({ i: i, codigo: c }); });
   });
   if (!alvos.length) return;
@@ -243,9 +255,30 @@ function processarLote_(lote, codigos, convertidos, status, reprocessar) {
   });
 
   lote.forEach(function (i) {
-    if (ultimo[i]) status[i][0] = ultimo[i].descricao;
-    else if (erros[i] && tipo(i) === TIPO_CODIGO.RASTREIO) status[i][0] = 'Erro rastro: ' + erros[i];
+    if (ultimo[i]) {
+      dados.status[i][0] = resumirStatus_(ultimo[i].descricao);
+      const data = dataOcorrencia_(ultimo[i].dataHora, dados.fuso);
+      if (data) dados.datas[i][0] = data;
+    } else if (erros[i] && tipo(i) === TIPO_CODIGO.RASTREIO) {
+      dados.status[i][0] = 'Erro rastro: ' + erros[i];
+    }
   });
+}
+
+/**
+ * Data/hora do evento como Date no fuso da planilha. Aceita o formato do Rastro
+ * (AAAA-MM-DDTHH:MM:SS) e o da reversa (DD-MM-AAAA + hora: "DD-MM-AAAA HH:MM:SS"). null se não reconhecer.
+ */
+function dataOcorrencia_(texto, fuso) {
+  const t = String(texto || '').trim();
+  let m = t.match(/^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2})(?::(\d{2}))?)?/);
+  if (!m) {
+    const r = t.match(/^(\d{2})[-\/](\d{2})[-\/](\d{4})(?:\s+(\d{2}):(\d{2})(?::(\d{2}))?)?/);
+    if (!r) return null;
+    m = [r[0], r[3], r[2], r[1], r[4], r[5], r[6]];
+  }
+  const iso = m[1] + '-' + m[2] + '-' + m[3] + ' ' + (m[4] || '00') + ':' + (m[5] || '00') + ':' + (m[6] || '00');
+  return Utilities.parseDate(iso, fuso, 'yyyy-MM-dd HH:mm:ss');
 }
 
 // Códigos de rastreio válidos numa célula (pode haver mais de um, separados por vírgula)
@@ -265,14 +298,11 @@ function resultadoAutorizacao_(numero, resp) {
   if (!aut) return { status: r.erro ? 'Erro: ' + r.erro : 'Autorização não encontrada' };
 
   const atual = statusAtual_(aut);
-  return { codigo: codigosRastreio_(aut), status: atual ? atual.descricao : '' };
-}
-
-// Entregue, cancelada ou prazo expirado: não muda mais, não precisa consultar de novo
-// ("Objeto não entregue - ..." do rastro NÃO é final)
-function statusFinalizado_(texto) {
-  const t = normalizarTexto_(texto);
-  return /cancelad|expirad/.test(t) || (/entregue/.test(t) && !/nao entregue/.test(t));
+  return {
+    codigo: codigosRastreio_(aut),
+    status: atual ? resumirStatus_(atual.descricao) : '',
+    data: atual ? atual.data + ' ' + atual.hora : ''
+  };
 }
 
 /* ---------- Auxiliares da planilha ---------- */
@@ -301,8 +331,9 @@ function indiceColuna_(aba, nome) {
   return cab.map(normalizarTexto_).indexOf(alvo) + 1;
 }
 
-// Garante a coluna no fim do cabeçalho (copiando a formatação do cabeçalho vizinho)
-function garantirColuna_(aba, nome) {
+// Garante a coluna no fim do cabeçalho (copiando a formatação do cabeçalho vizinho);
+// `formato` (opcional) é o formato numérico aplicado às células de dados quando a coluna é criada
+function garantirColuna_(aba, nome, formato) {
   const existente = indiceColuna_(aba, nome);
   if (existente) return existente;
 
@@ -311,6 +342,7 @@ function garantirColuna_(aba, nome) {
   if (col > aba.getMaxColumns()) aba.insertColumnAfter(aba.getMaxColumns());
   if (col > 1) aba.getRange(linha, col - 1).copyFormatToRange(aba, col, col, linha, linha);
   aba.getRange(linha, col).setValue(nome);
+  if (formato && aba.getMaxRows() > linha) aba.getRange(linha + 1, col, aba.getMaxRows() - linha, 1).setNumberFormat(formato);
   return col;
 }
 
