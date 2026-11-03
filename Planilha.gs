@@ -232,7 +232,8 @@ function processarLote_(lote, dados, reprocessar) {
       const i = paraReversa[k];
       const res = resultadoAutorizacao_(numeros[k], resp);
       if (res.codigo !== undefined) dados.convertidos[i][0] = res.codigo;
-      dados.status[i][0] = res.status;
+      // erro não apaga um status já conhecido (a linha é consultada de novo na próxima execução)
+      if (statusValido_(res.status) || !statusValido_(dados.status[i][0])) dados.status[i][0] = res.status;
       const data = dataOcorrencia_(res.data, dados.fuso);
       if (data) dados.datas[i][0] = data;
     });
@@ -259,7 +260,8 @@ function processarLote_(lote, dados, reprocessar) {
       dados.status[i][0] = resumirStatus_(ultimo[i].descricao);
       const data = dataOcorrencia_(ultimo[i].dataHora, dados.fuso);
       if (data) dados.datas[i][0] = data;
-    } else if (erros[i] && tipo(i) === TIPO_CODIGO.RASTREIO) {
+    } else if (erros[i] && tipo(i) === TIPO_CODIGO.RASTREIO && !statusValido_(dados.status[i][0])) {
+      // só grava o erro se não houver status anterior; a linha volta a ser consultada na próxima execução
       dados.status[i][0] = 'Erro rastro: ' + erros[i];
     }
   });
@@ -279,6 +281,11 @@ function dataOcorrencia_(texto, fuso) {
   }
   const iso = m[1] + '-' + m[2] + '-' + m[3] + ' ' + (m[4] || '00') + ':' + (m[5] || '00') + ':' + (m[6] || '00');
   return Utilities.parseDate(iso, fuso, 'yyyy-MM-dd HH:mm:ss');
+}
+
+function statusValido_(texto) {
+  const t = String(texto == null ? '' : texto).trim();
+  return t !== '' && !/^erro/i.test(t);
 }
 
 // Códigos de rastreio válidos numa célula (pode haver mais de um, separados por vírgula)

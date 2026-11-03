@@ -19,7 +19,7 @@ function consultarRastro(req) {
 }
 
 /**
- * Consulta vários códigos em paralelo (UrlFetchApp.fetchAll), só o último evento.
+ * Consulta vários códigos em paralelo (buscarTodos_, com novas tentativas), só o último evento.
  * Se algum vier 401, renova o token e repete esses. Devolve um array de
  * { etapa, url, status, body } na mesma ordem de `codigos`.
  */
@@ -50,7 +50,7 @@ function buscarRastro_(urls, token) {
       muteHttpExceptions: true
     };
   });
-  return UrlFetchApp.fetchAll(reqs).map(function (resp, i) {
+  return buscarTodos_(reqs).map(function (resp, i) {
     return { etapa: 'Rastro', url: urls[i], status: resp.getResponseCode(), body: resp.getContentText() };
   });
 }

@@ -7,6 +7,7 @@ Projeto em **Google Apps Script (GAS)** para consultar autorizações de postage
 Os nomes no GitHub são os mesmos do editor do GAS (ex.: `Planilha.gs` ↔ arquivo `Planilha`). Todos os `.gs` compartilham o escopo global; não usar, no nível superior de um arquivo, constantes de outro arquivo (a ordem de carga não é garantida).
 
 - `Config.gs` — `CONFIG` (endpoints, nomes de colunas, lote/tempo), hosts permitidos e leitura das credenciais nas Propriedades do script.
+- `Http.gs` — `buscarTodos_`: `fetchAll` em grupos de `CONFIG.HTTP.SIMULTANEAS` com novas tentativas para 429/502/503/504 (usado por Reversa e Rastro em lote).
 - `Auth.gs` — API Token (REST), cache do token e GET autenticado com renovação em 401.
 - `PrePostagem.gs` — consulta da Pré-Postagem e diagnóstico do OpenAPI (`listarParametrosConsulta`).
 - `Reversa.gs` — montagem/envio do SOAP de Logística Reversa (individual e em lote com `fetchAll`).
@@ -35,6 +36,7 @@ Colunas da aba: Protocolo, Pedido, Cliente Prime, Dt. autorização, Dt. postage
 - Só vão para as APIs as linhas cujo `Status tracking` não é final. Finais (`STATUS_FINAIS`): entregue, desistência (ex.: "Desistência do Cliente ECT"), prazo expirado, cancelada; "não entregue" e "Erro…" nunca são finais. "Reprocessar todas" ignora essa regra.
 - Execução limitada a ~4,5 min; se o tempo acabar, a próxima linha fica em `REVERSA_PROXIMA_LINHA` (Propriedades do script) e um gatilho de tempo de uso único (`continuarAtualizacao`, ~1 min) segue dali sozinho até o fim; o gatilho é apagado ao disparar e ao terminar o ciclo.
 - O Apps Script pode encerrar à força ("Tempo máximo de execução excedido") se um lote demorar; por isso: cada lote é gravado na planilha e o cursor atualizado logo após a consulta; o próximo lote só começa se couber no tempo (estimado pelo lote mais demorado); e no início de cada execução é agendado um gatilho de segurança (`ESPERA_SEGURANCA_MS`, 7 min) que retoma do cursor se a execução morrer.
+- Falhas temporárias do gateway (ex.: `504 GTW-005: Tempo limite esgotado`) são repetidas na hora (`CONFIG.HTTP.RETENTATIVAS`, espera 2 s/4 s); se persistirem, o erro só é gravado no `Status tracking` quando não há status anterior válido — senão o status anterior fica e a linha volta a ser consultada na próxima execução.
 - Erro de comunicação também agenda nova tentativa; após `MAX_FALHAS` execuções automáticas seguidas sem gravar nenhum lote o ciclo para (cursor mantido; o menu zera a contagem).
 - Menu "Cancelar continuação automática" apaga o gatilho pendente e o cursor.
 - Mensagens do menu usam `toast` (não bloqueia); não usar `ui.alert`, que trava a execução até alguém clicar em OK.
@@ -44,7 +46,7 @@ Colunas da aba: Protocolo, Pedido, Cliente Prime, Dt. autorização, Dt. postage
 
 - **Nunca** versionar credenciais: ficam só nas Propriedades do script (ver Configuração).
 - Não registrar tokens, CNPJ, contrato ou dados de destinatários em logs, commits ou arquivos de exemplo.
-- Toda chamada HTTP usa `UrlFetchApp.fetch` (ou `fetchAll` em lote) com `muteHttpExceptions: true` e devolve `{ etapa, url, status, body }`.
+- Toda chamada HTTP usa `UrlFetchApp.fetch` (ou `buscarTodos_` em lote) com `muteHttpExceptions: true` e devolve `{ etapa, url, status, body }`.
 - Requisições REST só para `https://api.correios.com.br/`; SOAP só para os hosts em `HOSTS_REVERSA`.
 
 ## O que já foi validado (out/2026)

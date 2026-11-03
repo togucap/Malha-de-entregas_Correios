@@ -71,7 +71,7 @@ function consultarReversa(req) {
 }
 
 /**
- * Consulta várias autorizações em paralelo (UrlFetchApp.fetchAll), histórico completo.
+ * Consulta várias autorizações em paralelo (buscarTodos_, com novas tentativas), histórico completo.
  * Devolve um array de { etapa, url, status, body } na mesma ordem de `numeros`.
  */
 function consultarReversaLote_(numeros, tipoSolicitacao) {
@@ -80,5 +80,5 @@ function consultarReversaLote_(numeros, tipoSolicitacao) {
     if (r.erro) throw new Error(r.erro.body);
     return Object.assign({ url: r.url }, r.params);
   });
-  return UrlFetchApp.fetchAll(reqs).map(function (resp, i) { return respostaReversa_(reqs[i].url, resp); });
+  return buscarTodos_(reqs).map(function (resp, i) { return respostaReversa_(reqs[i].url, resp); });
 }
