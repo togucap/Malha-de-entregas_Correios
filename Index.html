@@ -90,6 +90,23 @@
   </div>
 
   <div class="card">
+    <h1>Teste – API Rastro (código de rastreio)</h1>
+
+    <label for="codigoRastro">Código de rastreio</label>
+    <input type="text" id="codigoRastro" placeholder="ex.: AA123456789BR">
+
+    <label for="resultadoRastro">Eventos</label>
+    <select id="resultadoRastro">
+      <option value="T">Todos</option>
+      <option value="U">Apenas o último</option>
+    </select>
+
+    <div class="actions">
+      <button class="primary" id="btnRastro" onclick="consultarRastroTela()">Consultar rastro</button>
+    </div>
+  </div>
+
+  <div class="card">
     <div id="meta" class="hint">Nenhuma requisição feita ainda.</div>
     <pre id="saida"></pre>
   </div>
@@ -120,6 +137,14 @@
       });
     }
 
+    function consultarRastroTela() {
+      carregando(true, 'Consultando Rastro...');
+      google.script.run.withSuccessHandler(onResposta).withFailureHandler(onErro).consultarRastro({
+        codigo: document.getElementById('codigoRastro').value,
+        resultado: document.getElementById('resultadoRastro').value
+      });
+    }
+
     function addParam(k, v) {
       const div = document.createElement('div');
       div.className = 'row';
@@ -143,6 +168,7 @@
       document.getElementById('btnAuth').disabled = on;
       document.getElementById('btnConsulta').disabled = on;
       document.getElementById('btnReversa').disabled = on;
+      document.getElementById('btnRastro').disabled = on;
       if (on) { document.getElementById('meta').textContent = texto; document.getElementById('saida').textContent = ''; }
     }
 

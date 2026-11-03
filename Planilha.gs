@@ -2,8 +2,11 @@
  * Integração com a planilha base: menu, leitura da coluna "Autorização Postagem"
  * e gravação das colunas "Código convertido" e "Status tracking".
  *
- * Por enquanto só as autorizações de postagem (10 dígitos) são consultadas;
- * Jadlog e códigos de rastreio são identificados (Classificador.gs) e deixados como estão.
+ * Fluxo por linha (tipo identificado em Classificador.gs):
+ *   autorização (10 dígitos) -> Logística Reversa (SOAP): código de rastreio + status
+ *                            -> API Rastro com o "Código convertido": status final
+ *   rastreio (13)            -> API Rastro direto com o código da coluna
+ *   Jadlog (14)              -> ainda não consultado
  */
 
 const CURSOR_PROP = 'REVERSA_PROXIMA_LINHA';
@@ -13,7 +16,7 @@ const FUNCAO_CONTINUACAO = 'continuarAtualizacao';
 
 function onOpen() {
   SpreadsheetApp.getUi().createMenu('Correios')
-    .addItem('Atualizar autorizações de postagem', 'menuAtualizarAutorizacoes')
+    .addItem('Atualizar status (autorizações e rastreio)', 'menuAtualizarAutorizacoes')
     .addItem('Reprocessar todas (inclusive finalizadas)', 'menuReprocessarAutorizacoes')
     .addItem('Cancelar continuação automática', 'menuCancelarContinuacao')
     .addSeparator()
@@ -27,7 +30,7 @@ function menuReprocessarAutorizacoes() { executarPeloMenu_(true); }
 // Avisos por toast (canto da planilha): não bloqueiam a execução nem pedem clique
 function executarPeloMenu_(reprocessar) {
   const ss = SpreadsheetApp.getActive();
-  ss.toast('Consultando autorizações. Se o tempo limite for atingido, a atualização continua sozinha.', 'Correios', 10);
+  ss.toast('Consultando autorizações e rastreios. Se o tempo limite for atingido, a atualização continua sozinha.', 'Correios', 10);
   try {
     ss.toast(atualizarAutorizacoes(reprocessar), 'Correios', 30);
   } catch (e) {
@@ -51,8 +54,8 @@ function menuCancelarContinuacao() {
 }
 
 /**
- * Consulta no Web Service de Logística Reversa as linhas cuja coluna "Autorização Postagem"
- * contém uma autorização e grava o código de rastreio e o status atual.
+ * Atualiza "Código convertido" e "Status tracking" das linhas cuja coluna "Autorização Postagem"
+ * contém uma autorização de postagem ou um código de rastreio (fluxo no topo do arquivo).
  * Linhas já finalizadas (entregue, cancelada, expirada) são puladas, salvo reprocessar = true.
  * Se o tempo acabar, guarda a próxima linha e agenda continuarAtualizacao(), que segue dali
  * sozinha até o fim da planilha.
@@ -118,7 +121,8 @@ function atualizar_(reprocessar, automatico) {
   const primeiro = Math.max(0, Number(props.getProperty(CURSOR_PROP) || 0) - (cab + 1));
   const pendentes = [];
   for (let i = primeiro; i < total; i++) {
-    if (classificarCodigo_(codigos[i][0]) !== TIPO_CODIGO.AUTORIZACAO) continue;
+    const tipo = classificarCodigo_(codigos[i][0]);
+    if (tipo !== TIPO_CODIGO.AUTORIZACAO && tipo !== TIPO_CODIGO.RASTREIO) continue;
     if (!reprocessar && statusFinalizado_(status[i][0])) continue;
     pendentes.push(i);
   }
@@ -139,13 +143,7 @@ function atualizar_(reprocessar, automatico) {
 
     const t0 = Date.now();
     try {
-      const numeros = lote.map(function (i) { return normalizarCodigo_(codigos[i][0]); });
-      consultarReversaLote_(numeros, 'A').forEach(function (resp, k) {
-        const i = lote[k];
-        const res = resultadoAutorizacao_(numeros[k], resp);
-        if (res.codigo !== undefined) convertidos[i][0] = res.codigo;
-        status[i][0] = res.status;
-      });
+      processarLote_(lote, codigos, convertidos, status, reprocessar);
 
       // grava a faixa do lote na hora, para não perder nada se a execução for encerrada
       const de = lote[0], ate = lote[lote.length - 1];
@@ -163,7 +161,7 @@ function atualizar_(reprocessar, automatico) {
     if (feitas === lote.length) props.setProperty(FALHAS_PROP, '0');
   }
 
-  let msg = feitas + ' autorização(ões) consultada(s) na aba "' + aba.getName() + '".';
+  let msg = feitas + ' linha(s) atualizada(s) na aba "' + aba.getName() + '".';
   if (proxima === null) {
     encerrarCiclo_();
     return msg;
@@ -206,6 +204,56 @@ function encerrarCiclo_() {
   removerContinuacao_();
 }
 
+/**
+ * Consulta as linhas do lote e altera convertidos/status (arrays da planilha) no lugar.
+ * 1) Logística Reversa para autorizações ainda sem código de rastreio (ou todas, ao reprocessar).
+ * 2) API Rastro para todo código disponível (convertido ou o da própria coluna): o último evento
+ *    do rastro é o veredito do "Status tracking". Se o rastro falhar, vale o status da reversa.
+ */
+function processarLote_(lote, codigos, convertidos, status, reprocessar) {
+  const tipo = function (i) { return classificarCodigo_(codigos[i][0]); };
+
+  const paraReversa = lote.filter(function (i) {
+    return tipo(i) === TIPO_CODIGO.AUTORIZACAO && (reprocessar || !codigosDaCelula_(convertidos[i][0]).length);
+  });
+  if (paraReversa.length) {
+    const numeros = paraReversa.map(function (i) { return normalizarCodigo_(codigos[i][0]); });
+    consultarReversaLote_(numeros, 'A').forEach(function (resp, k) {
+      const i = paraReversa[k];
+      const res = resultadoAutorizacao_(numeros[k], resp);
+      if (res.codigo !== undefined) convertidos[i][0] = res.codigo;
+      status[i][0] = res.status;
+    });
+  }
+
+  const alvos = []; // { i, codigo }
+  lote.forEach(function (i) {
+    const cods = tipo(i) === TIPO_CODIGO.RASTREIO ? [normalizarCodigo_(codigos[i][0])] : codigosDaCelula_(convertidos[i][0]);
+    cods.forEach(function (c) { alvos.push({ i: i, codigo: c }); });
+  });
+  if (!alvos.length) return;
+
+  const ultimo = {}; // linha -> evento mais recente entre os códigos da linha
+  const erros = {};  // linha -> erro do rastro (usado só quando não há outra fonte de status)
+  consultarRastroLote_(alvos.map(function (a) { return a.codigo; })).forEach(function (resp, k) {
+    const i = alvos[k].i;
+    const r = interpretarRastro_(resp);
+    if (!r.ultimo) { erros[i] = r.erro; return; }
+    if (!ultimo[i] || r.ultimo.dataHora > ultimo[i].dataHora) ultimo[i] = r.ultimo;
+  });
+
+  lote.forEach(function (i) {
+    if (ultimo[i]) status[i][0] = ultimo[i].descricao;
+    else if (erros[i] && tipo(i) === TIPO_CODIGO.RASTREIO) status[i][0] = 'Erro rastro: ' + erros[i];
+  });
+}
+
+// Códigos de rastreio válidos numa célula (pode haver mais de um, separados por vírgula)
+function codigosDaCelula_(valor) {
+  return String(valor == null ? '' : valor).toUpperCase().split(/[\s,;]+/)
+    .filter(function (c) { return classificarCodigo_(c) === TIPO_CODIGO.RASTREIO; });
+}
+
 // Converte a resposta do Web Service em { codigo, status } para a planilha
 function resultadoAutorizacao_(numero, resp) {
   const r = interpretarReversa_(resp.body);
@@ -221,8 +269,10 @@ function resultadoAutorizacao_(numero, resp) {
 }
 
 // Entregue, cancelada ou prazo expirado: não muda mais, não precisa consultar de novo
+// ("Objeto não entregue - ..." do rastro NÃO é final)
 function statusFinalizado_(texto) {
-  return /entregue|cancelad|expirad/.test(normalizarTexto_(texto));
+  const t = normalizarTexto_(texto);
+  return /cancelad|expirad/.test(t) || (/entregue/.test(t) && !/nao entregue/.test(t));
 }
 
 /* ---------- Auxiliares da planilha ---------- */

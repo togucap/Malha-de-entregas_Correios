@@ -11,8 +11,10 @@ Os nomes no GitHub são os mesmos do editor do GAS (ex.: `Planilha.gs` ↔ arqui
 - `PrePostagem.gs` — consulta da Pré-Postagem e diagnóstico do OpenAPI (`listarParametrosConsulta`).
 - `Reversa.gs` — montagem/envio do SOAP de Logística Reversa (individual e em lote com `fetchAll`).
 - `ReversaParser.gs` — parser do XML (`XmlService`): uma entrada por autorização, histórico agrupado, status atual.
+- `Rastro.gs` — API Rastro (REST): consulta individual (tela de teste) e em lote com `fetchAll`, renovando o token em 401.
+- `RastroParser.gs` — parser do JSON do Rastro: eventos (mais recente primeiro), último evento, mensagem de erro (ex.: SRO-020).
 - `Classificador.gs` — tipo do código pela quantidade de caracteres: 10 dígitos autorização, 13 (`AA999999999AA`) rastreio, 14 dígitos Jadlog.
-- `Planilha.gs` — menu **Correios** (`onOpen`) e atualização da aba base: lê `Autorização Postagem`, grava `Código convertido` e `Status tracking`.
+- `Planilha.gs` — menu **Correios** (`onOpen`) e atualização da aba base: lê `Autorização Postagem`, grava `Código convertido` e `Status tracking` (Reversa → Rastro).
 - `Interface.gs` + `Index.html` — interface de teste (HtmlService) com a resposta crua das APIs; App da Web (`doGet`) ou janela na planilha (`abrirTeste`).
 
 ## Configuração
@@ -23,9 +25,11 @@ Propriedades do script (Configurações do projeto > Propriedades do script): `C
 
 Colunas da aba: Protocolo, Pedido, Cliente Prime, Dt. autorização, Dt. postagem, Autorização Postagem, Tipo da Solicitação, Tipo abertura (+ `Código convertido` e `Status tracking`, criadas pelo script se não existirem). Colunas são localizadas pelo nome do cabeçalho (sem diferenciar acentos/maiúsculas).
 
-- Só autorizações (10 dígitos) são consultadas por enquanto; Jadlog e rastreio ficam intactos.
-- `Status tracking` = descrição mais recente entre o `objeto` e o último evento do `historico`.
-- Linhas com status final (entregue, cancelada, expirada) são puladas, salvo no "Reprocessar todas".
+- Fluxo por lote: (1) autorizações (10) sem `Código convertido` → Logística Reversa (código + status); (2) todo código de rastreio disponível — `Código convertido` ou o próprio código (13) da coluna — → API Rastro (`resultado=U`). Jadlog (14) ainda não é consultado.
+- Veredito do `Status tracking`: descrição do último evento do Rastro. Se o Rastro falhar, fica o status da reversa (descrição mais recente entre `objeto` e `historico`); para códigos de rastreio diretos, grava `Erro rastro: ...`.
+- Motivo: a reversa às vezes fica em "Coletado" quando o objeto já foi entregue; o Rastro é a fonte confiável depois da postagem.
+- Autorização que já tem `Código convertido` só consulta o Rastro (a reversa é refeita no "Reprocessar todas").
+- Linhas com status final (entregue, cancelada, expirada — exceto "não entregue") são puladas, salvo no "Reprocessar todas".
 - Execução limitada a ~4,5 min; se o tempo acabar, a próxima linha fica em `REVERSA_PROXIMA_LINHA` (Propriedades do script) e um gatilho de tempo de uso único (`continuarAtualizacao`, ~1 min) segue dali sozinho até o fim; o gatilho é apagado ao disparar e ao terminar o ciclo.
 - O Apps Script pode encerrar à força ("Tempo máximo de execução excedido") se um lote demorar; por isso: cada lote é gravado na planilha e o cursor atualizado logo após a consulta; o próximo lote só começa se couber no tempo (estimado pelo lote mais demorado); e no início de cada execução é agendado um gatilho de segurança (`ESPERA_SEGURANCA_MS`, 7 min) que retoma do cursor se a execução morrer.
 - Erro de comunicação também agenda nova tentativa; após `MAX_FALHAS` execuções automáticas seguidas sem gravar nenhum lote o ciclo para (cursor mantido; o menu zera a contagem).
@@ -52,6 +56,7 @@ Colunas da aba: Protocolo, Pedido, Cliente Prime, Dt. autorização, Dt. postage
 - `GET https://api.correios.com.br/srorastro/v1/objetos/{codigoObjeto}?resultado=T`
 - Consulta **somente por código de objeto** (ex.: `AP584526429BR`), não por autorização.
 - Só rastreia objetos vinculados ao contrato do remetente.
+- Resposta: `objetos[0]` com `codObjeto` e `eventos[]` (`codigo`, `tipo`, `dtHrCriado`, `descricao`, …); sem eventos vem `mensagem` (ex.: `SRO-020` objeto não encontrado). Conferir campos reais pelo cartão "API Rastro" da tela de teste.
 
 ### 3. API Pré-Postagem (REST) — acesso OK, mas NÃO contém as autorizações da empresa
 - `GET /prepostagem/v1/prepostagens` → 405 (v1 só aceita POST, que cria pré-postagem).
@@ -99,7 +104,7 @@ Número da autorização → `acompanharPedido` (SOAP) → `numero_etiqueta` →
 1. ~~Mover credenciais para Script Properties.~~ (feito)
 2. ~~Parser do XML com histórico agrupado.~~ (feito — `ReversaParser.gs`)
 3. ~~Consulta em lote a partir da planilha (código de rastreio e status).~~ (feito — `Planilha.gs`); avaliar colunas extras: data do status, data de entrega, peso e valor.
-4. Consultar os códigos de rastreio (13) na API Rastro e definir a integração Jadlog (14).
+4. ~~Consultar os códigos de rastreio na API Rastro.~~ (feito — `Rastro.gs`); definir a integração Jadlog (14).
 5. Agendar atualização periódica (gatilho recorrente em `atualizarAutorizacoes`), respeitando cotas do `UrlFetchApp`.
 
 ## Referências
