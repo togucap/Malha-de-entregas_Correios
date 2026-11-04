@@ -16,7 +16,7 @@ Os nomes no GitHub são os mesmos do editor do GAS (ex.: `Planilha.gs` ↔ arqui
 - `RastroParser.gs` — parser do JSON do Rastro: eventos (mais recente primeiro), último evento, mensagem de erro (ex.: SRO-020).
 - `Status.gs` — resumo do `Status tracking` (`RESUMOS_STATUS`) e status finalizadores (`STATUS_FINAIS`); listas editáveis.
 - `Classificador.gs` — tipo do código pela quantidade de caracteres: 10 dígitos autorização, 13 (`AA999999999AA`) rastreio, 14 dígitos Jadlog.
-- `Planilha.gs` — menu **Correios** (`onOpen`) e atualização da aba base: lê `Autorização Postagem`, grava `Código convertido`, `Status tracking` e `Data Ocorrencia` (Reversa → Rastro).
+- `Planilha.gs` — menu **Correios** (`onOpen`) e atualização da aba base: lê `Autorização Postagem`, grava `Código convertido`, `Status tracking`, `Data Ocorrencia` e `cidade ultima interação` (Reversa → Rastro).
 - `Interface.gs` + `Index.html` — interface de teste (HtmlService) com a resposta crua das APIs; App da Web (`doGet`) ou janela na planilha (`abrirTeste`).
 
 ## Configuração
@@ -25,11 +25,12 @@ Propriedades do script (Configurações do projeto > Propriedades do script): `C
 
 ## Planilha base
 
-Colunas da aba: Protocolo, Pedido, Cliente Prime, Dt. autorização, Dt. postagem, Autorização Postagem, Tipo da Solicitação, Tipo abertura (+ `Código convertido`, `Status tracking` e `Data Ocorrencia`, criadas pelo script se não existirem). Colunas são localizadas pelo nome do cabeçalho (sem diferenciar acentos/maiúsculas).
+Colunas da aba: Protocolo, Pedido, Cliente Prime, Dt. autorização, Dt. postagem, Autorização Postagem, Tipo da Solicitação, Tipo abertura (+ `Código convertido`, `Status tracking`, `Data Ocorrencia` e `cidade ultima interação`, criadas pelo script se não existirem). Colunas são localizadas pelo nome do cabeçalho (sem diferenciar acentos/maiúsculas).
 
 - Fluxo por lote: (1) autorizações (10) sem `Código convertido` → Logística Reversa (código + status); (2) todo código de rastreio disponível — `Código convertido` ou o próprio código (13) da coluna — → API Rastro (`resultado=U`). Jadlog (14) ainda não é consultado.
 - Veredito do `Status tracking`: último evento do Rastro, **resumido** (ex.: "Objeto saiu para entrega ao destinatário" → "Saiu para entrega"; "Objeto em transferência - por favor aguarde" → "Objeto em transferência"; "Objeto entregue ao destinatário" → "Entregue"). Sem regra em `RESUMOS_STATUS`, usa o texto antes de " - ". Se o Rastro falhar, fica o status da reversa (descrição mais recente entre `objeto` e `historico`); para códigos de rastreio diretos, grava `Erro rastro: ...`.
 - `Data Ocorrencia`: data/hora do evento usado no status (`dtHrCriado` do Rastro ou data+hora da reversa), gravada como data no fuso da planilha (formato `dd/mm/yyyy` ao criar a coluna).
+- `cidade ultima interação`: `unidade.endereco.cidade` do último evento do Rastro (sem UF). Só vem do Rastro; se o Rastro falhar ou o evento não trouxer cidade, a célula fica como está. Para preencher linhas já finalizadas, usar "Reprocessar todas".
 - `Código convertido` fica vazio quando a coluna já traz o código de rastreio (decisão do usuário).
 - Motivo: a reversa às vezes fica em "Coletado" quando o objeto já foi entregue; o Rastro é a fonte confiável depois da postagem.
 - Autorização que já tem `Código convertido` só consulta o Rastro (a reversa é refeita no "Reprocessar todas").

@@ -2,7 +2,8 @@
  * Interpretação da resposta JSON da API Rastro.
  *
  * Formato esperado (resumido):
- *   { objetos: [{ codObjeto, mensagem?, eventos: [{ codigo, tipo, dtHrCriado, descricao, detalhe? }] }] }
+ *   { objetos: [{ codObjeto, mensagem?, eventos: [{ codigo, tipo, dtHrCriado, descricao, detalhe?,
+ *                                                   unidade: { endereco: { cidade, uf } } }] }] }
  * Sem eventos, o objeto traz `mensagem` (ex.: "SRO-020: Objeto não encontrado na base de dados dos Correios").
  *
  * Devolve { erro: string | null, codigo, eventos: [...] (mais recente primeiro), ultimo: evento | null }
@@ -25,7 +26,9 @@ function interpretarRastro_(resp) {
       tipo: e.tipo || '',
       dataHora: e.dtHrCriado || '',   // AAAA-MM-DDTHH:MM:SS (ordenável como texto)
       descricao: e.descricao || '',
-      detalhe: e.detalhe || ''
+      detalhe: e.detalhe || '',
+      cidade: (e.unidade && e.unidade.endereco && e.unidade.endereco.cidade) || '',
+      uf: (e.unidade && e.unidade.endereco && e.unidade.endereco.uf) || ''
     };
   }).sort(function (a, b) { return a.dataHora < b.dataHora ? 1 : a.dataHora > b.dataHora ? -1 : 0; });
 

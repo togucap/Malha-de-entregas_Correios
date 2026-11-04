@@ -1,6 +1,6 @@
 /**
  * Integração com a planilha base: menu, leitura da coluna "Autorização Postagem"
- * e gravação das colunas "Código convertido", "Status tracking" e "Data Ocorrencia".
+ * e gravação das colunas "Código convertido", "Status tracking", "Data Ocorrencia" e "cidade ultima interação".
  *
  * Fluxo por linha (tipo identificado em Classificador.gs):
  *   autorização (10 dígitos) -> Logística Reversa (SOAP): código de rastreio + status
@@ -108,6 +108,7 @@ function atualizar_(reprocessar, automatico) {
   const colConvertido = garantirColuna_(aba, cfg.COL_CONVERTIDO);
   const colStatus = garantirColuna_(aba, cfg.COL_STATUS);
   const colData = garantirColuna_(aba, cfg.COL_DATA, 'dd/mm/yyyy');
+  const colCidade = garantirColuna_(aba, cfg.COL_CIDADE);
 
   const total = aba.getLastRow() - cab;
   if (total <= 0) {
@@ -123,6 +124,7 @@ function atualizar_(reprocessar, automatico) {
     convertidos: convertidos,
     status: status,
     datas: aba.getRange(cab + 1, colData, total, 1).getValues(),
+    cidades: aba.getRange(cab + 1, colCidade, total, 1).getValues(),
     fuso: aba.getParent().getSpreadsheetTimeZone()
   };
 
@@ -158,6 +160,7 @@ function atualizar_(reprocessar, automatico) {
       aba.getRange(cab + 1 + de, colConvertido, ate - de + 1, 1).setValues(convertidos.slice(de, ate + 1));
       aba.getRange(cab + 1 + de, colStatus, ate - de + 1, 1).setValues(status.slice(de, ate + 1));
       aba.getRange(cab + 1 + de, colData, ate - de + 1, 1).setValues(dados.datas.slice(de, ate + 1));
+      aba.getRange(cab + 1 + de, colCidade, ate - de + 1, 1).setValues(dados.cidades.slice(de, ate + 1));
     } catch (e) {
       erro = e;
       break;
@@ -214,10 +217,11 @@ function encerrarCiclo_() {
 }
 
 /**
- * Consulta as linhas do lote e altera dados.convertidos/status/datas (arrays da planilha) no lugar.
+ * Consulta as linhas do lote e altera dados.convertidos/status/datas/cidades (arrays da planilha) no lugar.
  * 1) Logística Reversa para autorizações ainda sem código de rastreio (ou todas, ao reprocessar).
  * 2) API Rastro para todo código disponível (convertido ou o da própria coluna): o último evento
- *    do rastro é o veredito do "Status tracking" (resumido, ver Status.gs) e da "Data Ocorrencia".
+ *    do rastro é o veredito do "Status tracking" (resumido, ver Status.gs), da "Data Ocorrencia"
+ *    e da "cidade ultima interação".
  *    Se o rastro falhar, valem o status e a data da reversa.
  */
 function processarLote_(lote, dados, reprocessar) {
@@ -260,6 +264,7 @@ function processarLote_(lote, dados, reprocessar) {
       dados.status[i][0] = resumirStatus_(ultimo[i].descricao);
       const data = dataOcorrencia_(ultimo[i].dataHora, dados.fuso);
       if (data) dados.datas[i][0] = data;
+      if (ultimo[i].cidade) dados.cidades[i][0] = ultimo[i].cidade; // cidade da unidade do último evento
     } else if (erros[i] && tipo(i) === TIPO_CODIGO.RASTREIO && !statusValido_(dados.status[i][0])) {
       // só grava o erro se não houver status anterior; a linha volta a ser consultada na próxima execução
       dados.status[i][0] = 'Erro rastro: ' + erros[i];
