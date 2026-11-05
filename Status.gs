@@ -19,8 +19,12 @@ const RESUMOS_STATUS = [
   ['postado', 'Postado']
 ];
 
-// Trechos que indicam status final; "não entregue" nunca é final
+// Trechos que indicam status final; "não entregue" nunca é final.
+// "expirad" também cobre a marca de rastreio expirado (SRO-012), gravada por Planilha.gs.
 const STATUS_FINAIS = ['entregue', 'desistencia', 'expirad', 'cancelad'];
+
+// Rastro SRO-012: objeto postado há mais de 180 dias, não pode mais ser consultado
+const MARCA_RASTREIO_EXPIRADO = 'rastreio expirado';
 
 /**
  * Resumo da descrição; sem regra na lista, usa o texto antes de " - "
@@ -38,6 +42,7 @@ function resumirStatus_(descricao) {
 // Entregue, desistência, prazo expirado, cancelada: não muda mais, não precisa consultar de novo
 function statusFinalizado_(texto) {
   const t = normalizarTexto_(texto);
+  if (t.indexOf(MARCA_RASTREIO_EXPIRADO) >= 0) return true; // vale mesmo para "Não entregue (rastreio expirado)"
   if (!t || /^erro/.test(t) || t.indexOf('nao entregue') >= 0) return false;
   return STATUS_FINAIS.some(function (f) { return t.indexOf(f) >= 0; });
 }

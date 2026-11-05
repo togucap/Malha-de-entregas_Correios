@@ -129,6 +129,9 @@ function atualizar_(reprocessar, automatico) {
     fuso: aba.getParent().getSpreadsheetTimeZone()
   };
 
+  // "Reprocessar todas" pelo menu sempre começa da primeira linha de dados
+  if (reprocessar && !automatico) [CURSOR_PROP, CURSOR_ABA_PROP].forEach(function (k) { props.deleteProperty(k); });
+
   // o cursor só vale para a aba em que foi gravado (evita retomar no meio de outra aba)
   const cursorDaAba = props.getProperty(CURSOR_ABA_PROP) === aba.getName();
   const primeiro = cursorDaAba ? Math.max(0, Number(props.getProperty(CURSOR_PROP) || 0) - (cab + 1)) : 0;
@@ -279,11 +282,13 @@ function processarLote_(lote, dados) {
 
   const ultimo = {}; // linha -> evento mais recente entre os códigos da linha
   const erros = {};  // linha -> erro do rastro (usado só quando não há outra fonte de status)
+  const expirados = {}; // linha -> Rastro respondeu SRO-012 (postado há mais de 180 dias)
   consultarRastroLote_(alvos.map(function (a) { return a.codigo; })).forEach(function (resp, k) {
     const i = alvos[k].i;
     const r = interpretarRastro_(resp);
     if (!r.ultimo) {
       erros[i] = r.erro;
+      if (/SRO-012/.test(r.erro)) expirados[i] = true;
       contagem.falhas++;
       if (HTTP_TEMPORARIOS.indexOf(resp.status) >= 0) contagem.temporarias++;
       contagem.erros[r.erro] = (contagem.erros[r.erro] || 0) + 1;
@@ -299,12 +304,22 @@ function processarLote_(lote, dados) {
       const data = dataOcorrencia_(ultimo[i].dataHora, dados.fuso);
       if (data) dados.datas[i][0] = data;
       if (ultimo[i].cidade) dados.cidades[i][0] = ultimo[i].cidade; // cidade da unidade do último evento
+    } else if (expirados[i]) {
+      // o Rastro não consulta mais este objeto: marca como final para não gastar cota nas próximas execuções
+      dados.status[i][0] = marcarRastreioExpirado_(dados.status[i][0]);
     } else if (erros[i] && tipo(i) === TIPO_CODIGO.RASTREIO && !statusValido_(dados.status[i][0])) {
       // só grava o erro se não houver status anterior; a linha volta a ser consultada na próxima execução
       dados.status[i][0] = 'Erro rastro: ' + erros[i];
     }
   });
   return contagem;
+}
+
+// "Coletado" -> "Coletado (rastreio expirado)"; sem status anterior válido -> "Rastreio expirado"
+function marcarRastreioExpirado_(status) {
+  const atual = String(status == null ? '' : status).trim();
+  if (/rastreio expirado/i.test(atual)) return atual;
+  return statusValido_(atual) ? atual + ' (' + MARCA_RASTREIO_EXPIRADO + ')' : 'Rastreio expirado';
 }
 
 // " Rastro: 5 ok, 45 sem resposta (HTTP 429: ... ×45)." para o toast e o registro de execuções

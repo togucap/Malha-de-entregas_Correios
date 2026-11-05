@@ -34,7 +34,7 @@ Aba consultada: **`Base_Dados`** (`CONFIG.PLANILHA.ABA`); a planilha terá outra
 - `Código convertido` fica vazio quando a coluna já traz o código de rastreio (decisão do usuário).
 - Motivo: a reversa às vezes fica em "Coletado" quando o objeto já foi entregue; o Rastro é a fonte confiável depois da postagem.
 - Autorização que já tem `Código convertido` só consulta o Rastro, também no "Reprocessar todas" (o código não muda depois de emitido; refazer a reversa só dobrava as chamadas).
-- Só vão para as APIs as linhas cujo `Status tracking` não é final. Finais (`STATUS_FINAIS`): entregue, desistência (ex.: "Desistência do Cliente ECT"), prazo expirado, cancelada; "não entregue" e "Erro…" nunca são finais. "Reprocessar todas" ignora essa regra.
+- Só vão para as APIs as linhas cujo `Status tracking` não é final. Finais (`STATUS_FINAIS`): entregue, desistência (ex.: "Desistência do Cliente ECT"), prazo expirado, rastreio expirado (SRO-012), cancelada; "não entregue" e "Erro…" nunca são finais. "Reprocessar todas" ignora essa regra.
 - Execução limitada a ~4,5 min; se o tempo acabar, a próxima linha fica em `REVERSA_PROXIMA_LINHA` (Propriedades do script, válida só para a aba gravada em `REVERSA_ABA`) e um gatilho de tempo de uso único (`continuarAtualizacao`, ~1 min) segue dali sozinho até o fim; o gatilho é apagado ao disparar e ao terminar o ciclo.
 - O Apps Script pode encerrar à força ("Tempo máximo de execução excedido") se um lote demorar; por isso: cada lote é gravado na planilha e o cursor atualizado logo após a consulta; o próximo lote só começa se couber no tempo (estimado pelo lote mais demorado); e no início de cada execução é agendado um gatilho de segurança (`ESPERA_SEGURANCA_MS`, 7 min) que retoma do cursor se a execução morrer.
 - Falhas temporárias do gateway (ex.: `504 GTW-005: Tempo limite esgotado`, `429`) são repetidas na hora (`CONFIG.HTTP.RETENTATIVAS`, espera 2 s/4 s ou o `Retry-After`, até 30 s); se persistirem, o erro só é gravado no `Status tracking` quando não há status anterior válido — senão o status anterior fica e a linha volta a ser consultada na próxima execução.
@@ -42,6 +42,7 @@ Aba consultada: **`Base_Dados`** (`CONFIG.PLANILHA.ABA`); a planilha terá outra
 - Toda execução termina com um resumo do Rastro no toast e no registro de execuções (ex.: "Rastro: 5 ok, 45 sem resposta (HTTP 429: … ×45)"); falhas do Rastro em linhas de autorização não aparecem na planilha, então o diagnóstico é por esse resumo.
 - Erro de comunicação também agenda nova tentativa; após `MAX_FALHAS` execuções automáticas seguidas sem gravar nenhum lote o ciclo para (cursor mantido; o menu zera a contagem).
 - Menu "Cancelar continuação automática" apaga o gatilho pendente e o cursor.
+- "Reprocessar todas" pelo menu apaga o cursor e sempre começa da primeira linha de dados (as continuações automáticas dele seguem do cursor normalmente).
 - Mensagens do menu usam `toast` (não bloqueia); não usar `ui.alert`, que trava a execução até alguém clicar em OK.
 - Conta Gmail comum: gatilhos somam no máx. 90 min/dia de execução e 20 mil chamadas `UrlFetchApp`/dia (Workspace: 6 h e 100 mil).
 
@@ -66,7 +67,7 @@ Aba consultada: **`Base_Dados`** (`CONFIG.PLANILHA.ABA`); a planilha terá outra
 - Só rastreia objetos vinculados ao contrato do remetente.
 - Resposta (confirmada, versão 3.8.3): `objetos[0]` com `codObjeto`, `tipoPostal`, `dtPrevista`, dimensões/peso e `eventos[]` (mais recente primeiro) com `codigo` (ex.: BDE, OEC, RO, BDR, PO), `tipo`, `dtHrCriado` (AAAA-MM-DDTHH:MM:SS), `descricao`, `detalhe`, `unidade`/`unidadeDestino`. Sem eventos vem `mensagem` (ex.: `SRO-020` objeto não encontrado). O mesmo `codigo` (ex.: BDR) tem significados diferentes conforme o `tipo`, por isso o resumo usa a `descricao`.
 
-- Objetos postados há mais de 180 dias não são consultáveis: `SRO-012: Objeto postado há mais de 180 dias. O prazo para consulta expirou` (HTTP 200, sem eventos). Para esses, só vale o status da reversa.
+- Objetos postados há mais de 180 dias não são consultáveis: `SRO-012: Objeto postado há mais de 180 dias. O prazo para consulta expirou` (HTTP 200, sem eventos). Para esses, só vale o status da reversa, gravado com a marca "(rastreio expirado)" — ou "Rastreio expirado" se não houver status — e tratado como final.
 
 ### 3. API Pré-Postagem (REST) — acesso OK, mas NÃO contém as autorizações da empresa
 - `GET /prepostagem/v1/prepostagens` → 405 (v1 só aceita POST, que cria pré-postagem).
