@@ -10,6 +10,7 @@
  */
 
 const CURSOR_PROP = 'REVERSA_PROXIMA_LINHA';
+const CURSOR_ABA_PROP = 'REVERSA_ABA'; // aba a que o cursor pertence
 const REPROCESSAR_PROP = 'REVERSA_REPROCESSAR';
 const FALHAS_PROP = 'REVERSA_FALHAS';
 const FUNCAO_CONTINUACAO = 'continuarAtualizacao';
@@ -128,7 +129,10 @@ function atualizar_(reprocessar, automatico) {
     fuso: aba.getParent().getSpreadsheetTimeZone()
   };
 
-  const primeiro = Math.max(0, Number(props.getProperty(CURSOR_PROP) || 0) - (cab + 1));
+  // o cursor só vale para a aba em que foi gravado (evita retomar no meio de outra aba)
+  const cursorDaAba = props.getProperty(CURSOR_ABA_PROP) === aba.getName();
+  const primeiro = cursorDaAba ? Math.max(0, Number(props.getProperty(CURSOR_PROP) || 0) - (cab + 1)) : 0;
+  props.setProperty(CURSOR_ABA_PROP, aba.getName());
   const pendentes = [];
   for (let i = primeiro; i < total; i++) {
     const tipo = classificarCodigo_(codigos[i][0]);
@@ -232,7 +236,7 @@ function removerContinuacao_(uid) {
 // Fim da planilha (ou cancelamento): limpa cursor, modo, contador de falhas e gatilho pendente
 function encerrarCiclo_() {
   const props = PropertiesService.getScriptProperties();
-  [CURSOR_PROP, REPROCESSAR_PROP, FALHAS_PROP].forEach(function (k) { props.deleteProperty(k); });
+  [CURSOR_PROP, CURSOR_ABA_PROP, REPROCESSAR_PROP, FALHAS_PROP].forEach(function (k) { props.deleteProperty(k); });
   removerContinuacao_();
 }
 

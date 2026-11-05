@@ -20,7 +20,7 @@ const CONFIG = {
   },
   PLANILHA: {
     ID: '',                 // vazio = planilha à qual o script está vinculado
-    ABA: '',                // vazio = primeira aba que tiver a coluna COL_CODIGO no cabeçalho
+    ABA: 'Base_Dados',      // aba consultada; vazio = primeira aba que tiver a coluna COL_CODIGO no cabeçalho
     LINHA_CABECALHO: 1,
     COL_CODIGO: 'Autorização Postagem',
     COL_CONVERTIDO: 'Código convertido',
