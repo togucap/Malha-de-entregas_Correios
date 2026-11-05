@@ -31,12 +31,14 @@ const CONFIG = {
     TEMPO_MAXIMO_MS: 4.5 * 60 * 1000,   // não inicia lote que possa passar disso (limite do Apps Script: 6 min)
     ESPERA_CONTINUACAO_MS: 60 * 1000,   // intervalo até a continuação automática
     ESPERA_SEGURANCA_MS: 7 * 60 * 1000, // retomada se a execução for encerrada à força pelo Apps Script
+    ESPERA_SOBRECARGA_MS: 5 * 60 * 1000, // pausa quando o Rastro recusa o lote inteiro (429/5xx)
     MAX_FALHAS: 3                       // execuções automáticas seguidas sem gravar nenhum lote antes de desistir
   },
   HTTP: {
     SIMULTANEAS: 5,              // requisições em paralelo por vez (muitas juntas causam 504 no gateway)
     RETENTATIVAS: 2,             // novas tentativas para 429/502/503/504
-    ESPERA_RETENTATIVA_MS: 2000  // espera antes da 1ª nova tentativa (2ª espera o dobro)
+    ESPERA_RETENTATIVA_MS: 2000, // espera antes da 1ª nova tentativa (2ª espera o dobro)
+    ESPERA_MAXIMA_MS: 30000      // teto da espera, mesmo que o Retry-After peça mais
   }
 };
 

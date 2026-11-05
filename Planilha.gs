@@ -56,7 +56,7 @@ function menuCancelarContinuacao() {
 /**
  * Atualiza "Código convertido" e "Status tracking" das linhas cuja coluna "Autorização Postagem"
  * contém uma autorização de postagem ou um código de rastreio (fluxo no topo do arquivo).
- * Linhas já finalizadas (entregue, cancelada, expirada) são puladas, salvo reprocessar = true.
+ * Linhas já finalizadas (entregue, desistência, expirada, cancelada) são puladas, salvo reprocessar = true.
  * Se o tempo acabar, guarda a próxima linha e agenda continuarAtualizacao(), que segue dali
  * sozinha até o fim da planilha.
  * Pode ser chamada por gatilho de tempo (o objeto do evento é ignorado).
@@ -146,6 +146,8 @@ function atualizar_(reprocessar, automatico) {
   let feitas = 0;
   let maiorLote = 0;  // duração do lote mais demorado, usada para prever o próximo
   let erro = null;
+  let sobrecarga = null; // mensagem quando o Rastro recusa o lote inteiro (limite/instabilidade)
+  const rastro = { ok: 0, falhas: 0, erros: {} };
   for (let p = 0; p < pendentes.length; p += cfg.LOTE) {
     const lote = pendentes.slice(p, p + cfg.LOTE);
     proxima = lote[0];
@@ -153,7 +155,7 @@ function atualizar_(reprocessar, automatico) {
 
     const t0 = Date.now();
     try {
-      processarLote_(lote, dados, reprocessar);
+      const r = processarLote_(lote, dados);
 
       // grava a faixa do lote na hora, para não perder nada se a execução for encerrada
       const de = lote[0], ate = lote[lote.length - 1];
@@ -161,6 +163,16 @@ function atualizar_(reprocessar, automatico) {
       aba.getRange(cab + 1 + de, colStatus, ate - de + 1, 1).setValues(status.slice(de, ate + 1));
       aba.getRange(cab + 1 + de, colData, ate - de + 1, 1).setValues(dados.datas.slice(de, ate + 1));
       aba.getRange(cab + 1 + de, colCidade, ate - de + 1, 1).setValues(dados.cidades.slice(de, ate + 1));
+
+      rastro.ok += r.ok;
+      rastro.falhas += r.falhas;
+      Object.keys(r.erros).forEach(function (m) { rastro.erros[m] = (rastro.erros[m] || 0) + r.erros[m]; });
+      // Rastro recusou todo o lote com erro temporário (ex.: 429/504): para aqui e tenta este lote
+      // de novo mais tarde, em vez de continuar disparando requisições que vão falhar
+      if (r.temporarias && r.temporarias === r.ok + r.falhas) {
+        sobrecarga = Object.keys(r.erros)[0];
+        break;
+      }
     } catch (e) {
       erro = e;
       break;
@@ -173,7 +185,8 @@ function atualizar_(reprocessar, automatico) {
     if (feitas === lote.length) props.setProperty(FALHAS_PROP, '0');
   }
 
-  let msg = feitas + ' linha(s) atualizada(s) na aba "' + aba.getName() + '".';
+  let msg = feitas + ' linha(s) atualizada(s) na aba "' + aba.getName() + '".' + resumoRastro_(rastro);
+  console.log(msg);
   if (proxima === null) {
     encerrarCiclo_();
     return msg;
@@ -181,8 +194,15 @@ function atualizar_(reprocessar, automatico) {
 
   const linha = cab + 1 + proxima;
   props.setProperty(CURSOR_PROP, String(linha));
-  agendarContinuacao_(reprocessar, cfg.ESPERA_CONTINUACAO_MS);
-  const espera = Math.round(cfg.ESPERA_CONTINUACAO_MS / 60000) + ' min';
+  const esperaMs = sobrecarga ? cfg.ESPERA_SOBRECARGA_MS : cfg.ESPERA_CONTINUACAO_MS;
+  agendarContinuacao_(reprocessar, esperaMs);
+  const espera = Math.round(esperaMs / 60000) + ' min';
+
+  if (sobrecarga) {
+    console.warn('Rastro indisponível na linha ' + linha + ': ' + sobrecarga);
+    return msg + ' A API Rastro recusou as consultas (' + sobrecarga + '); nova tentativa automática em ~' +
+      espera + ' a partir da linha ' + linha + '.';
+  }
 
   if (erro) {
     const texto = erro && erro.message ? erro.message : erro;
@@ -218,17 +238,19 @@ function encerrarCiclo_() {
 
 /**
  * Consulta as linhas do lote e altera dados.convertidos/status/datas/cidades (arrays da planilha) no lugar.
- * 1) Logística Reversa para autorizações ainda sem código de rastreio (ou todas, ao reprocessar).
+ * 1) Logística Reversa só para autorizações ainda sem código de rastreio (o código não muda depois
+ *    de emitido; assim o "Reprocessar todas" não dobra as chamadas).
  * 2) API Rastro para todo código disponível (convertido ou o da própria coluna): o último evento
  *    do rastro é o veredito do "Status tracking" (resumido, ver Status.gs), da "Data Ocorrencia"
  *    e da "cidade ultima interação".
  *    Se o rastro falhar, valem o status e a data da reversa.
+ * Devolve a contagem do Rastro: { ok, falhas, temporarias, erros: { mensagem: quantidade } }.
  */
-function processarLote_(lote, dados, reprocessar) {
+function processarLote_(lote, dados) {
   const tipo = function (i) { return classificarCodigo_(dados.codigos[i][0]); };
 
   const paraReversa = lote.filter(function (i) {
-    return tipo(i) === TIPO_CODIGO.AUTORIZACAO && (reprocessar || !codigosDaCelula_(dados.convertidos[i][0]).length);
+    return tipo(i) === TIPO_CODIGO.AUTORIZACAO && !codigosDaCelula_(dados.convertidos[i][0]).length;
   });
   if (paraReversa.length) {
     const numeros = paraReversa.map(function (i) { return normalizarCodigo_(dados.codigos[i][0]); });
@@ -248,14 +270,22 @@ function processarLote_(lote, dados, reprocessar) {
     const cods = tipo(i) === TIPO_CODIGO.RASTREIO ? [normalizarCodigo_(dados.codigos[i][0])] : codigosDaCelula_(dados.convertidos[i][0]);
     cods.forEach(function (c) { alvos.push({ i: i, codigo: c }); });
   });
-  if (!alvos.length) return;
+  const contagem = { ok: 0, falhas: 0, temporarias: 0, erros: {} };
+  if (!alvos.length) return contagem;
 
   const ultimo = {}; // linha -> evento mais recente entre os códigos da linha
   const erros = {};  // linha -> erro do rastro (usado só quando não há outra fonte de status)
   consultarRastroLote_(alvos.map(function (a) { return a.codigo; })).forEach(function (resp, k) {
     const i = alvos[k].i;
     const r = interpretarRastro_(resp);
-    if (!r.ultimo) { erros[i] = r.erro; return; }
+    if (!r.ultimo) {
+      erros[i] = r.erro;
+      contagem.falhas++;
+      if (HTTP_TEMPORARIOS.indexOf(resp.status) >= 0) contagem.temporarias++;
+      contagem.erros[r.erro] = (contagem.erros[r.erro] || 0) + 1;
+      return;
+    }
+    contagem.ok++;
     if (!ultimo[i] || r.ultimo.dataHora > ultimo[i].dataHora) ultimo[i] = r.ultimo;
   });
 
@@ -270,6 +300,17 @@ function processarLote_(lote, dados, reprocessar) {
       dados.status[i][0] = 'Erro rastro: ' + erros[i];
     }
   });
+  return contagem;
+}
+
+// " Rastro: 5 ok, 45 sem resposta (HTTP 429: ... ×45)." para o toast e o registro de execuções
+function resumoRastro_(r) {
+  if (!r.ok && !r.falhas) return '';
+  const motivos = Object.keys(r.erros)
+    .sort(function (a, b) { return r.erros[b] - r.erros[a]; })
+    .slice(0, 3)
+    .map(function (m) { return m + ' ×' + r.erros[m]; });
+  return ' Rastro: ' + r.ok + ' ok' + (r.falhas ? ', ' + r.falhas + ' sem resposta (' + motivos.join('; ') + ')' : '') + '.';
 }
 
 /**
@@ -359,6 +400,6 @@ function garantirColuna_(aba, nome, formato) {
 }
 
 function normalizarTexto_(v) {
-  return String(v == null ? '' : v).normalize('NFD').replace(/[̀-ͯ]/g, '')
+  return String(v == null ? '' : v).normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .replace(/\s+/g, ' ').trim().toLowerCase();
 }
