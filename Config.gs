@@ -34,6 +34,9 @@ const CONFIG = {
     ESPERA_SOBRECARGA_MS: 5 * 60 * 1000, // pausa quando o Rastro recusa o lote inteiro (429/5xx)
     MAX_FALHAS: 3                       // execuções automáticas seguidas sem gravar nenhum lote antes de desistir
   },
+  DRIVE: {
+    PASTA_ID: '1Zk2F78ImtNqEDF_pULHe-74qwxaMH2xe' // pasta (drive compartilhado) com os relatórios dos cruzamentos
+  },
   HTTP: {
     SIMULTANEAS: 5,              // requisições em paralelo por vez (muitas juntas causam 504 no gateway)
     RETENTATIVAS: 2,             // novas tentativas para 429/502/503/504

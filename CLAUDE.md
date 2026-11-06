@@ -17,11 +17,21 @@ Os nomes no GitHub são os mesmos do editor do GAS (ex.: `Planilha.gs` ↔ arqui
 - `Status.gs` — resumo do `Status tracking` (`RESUMOS_STATUS`) e status finalizadores (`STATUS_FINAIS`); listas editáveis.
 - `Classificador.gs` — tipo do código pela quantidade de caracteres: 10 dígitos autorização, 13 (`AA999999999AA`) rastreio, 14 dígitos Jadlog.
 - `Planilha.gs` — menu **Correios** (`onOpen`) e atualização da aba base: lê `Autorização Postagem`, grava `Código convertido`, `Status tracking`, `Data Ocorrencia` e `cidade ultima interação` (Reversa → Rastro).
+- `Relatorios.gs` — lê relatórios da pasta do Drive (`CONFIG.DRIVE.PASTA_ID`, drive compartilhado): planilha Google, `.xlsx`/`.xls` (cópia convertida temporária via serviço avançado Drive API v3, enviada à lixeira) e `.csv`.
+- `Cruzamentos.gs` — lista `CRUZAMENTOS` (arquivo, chave da base, chave do relatório, colunas trazidas) e o botão de menu "Cruzar com relatórios do Drive", que executa todos.
 - `Interface.gs` + `Index.html` — interface de teste (HtmlService) com a resposta crua das APIs; App da Web (`doGet`) ou janela na planilha (`abrirTeste`).
 
 ## Configuração
 
 Propriedades do script (Configurações do projeto > Propriedades do script): `CORREIOS_USER`, `CORREIOS_API_KEY`, `CORREIOS_CARTAO`, `CORREIOS_COD_ADMINISTRATIVO`.
+
+## Cruzamentos com relatórios do Drive
+
+- Pasta: `CONFIG.DRIVE.PASTA_ID` (drive compartilhado). Requer o serviço avançado **Drive API (v3)** ativado no projeto (Serviços > + > Drive API, identificador `Drive`) para converter `.xlsx`.
+- Arquivo com nome repetido na pasta: usa o atualizado mais recentemente. Cabeçalho na linha 1; colunas achadas pelo nome (sem acentos/maiúsculas).
+- Chave comparada como texto (trim, maiúsculas; número inteiro sem casas decimais). Chave repetida no relatório: vale a primeira linha com o valor preenchido. Sem correspondência: mantém o valor que já estava na base.
+- Atual: `Base_Dados.Pedido` × `Consolidado_Parceiros_Out.xlsx.pedido_codigo` → `Parceiro` gravado em `Parceiro_Nome`.
+- Novos cruzamentos: acrescentar itens em `CRUZAMENTOS`; não criar botões separados.
 
 ## Planilha base
 

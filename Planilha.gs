@@ -21,6 +21,8 @@ function onOpen() {
     .addItem('Reprocessar todas (inclusive finalizadas)', 'menuReprocessarAutorizacoes')
     .addItem('Cancelar continuação automática', 'menuCancelarContinuacao')
     .addSeparator()
+    .addItem('Cruzar com relatórios do Drive', 'menuCruzarRelatorios')
+    .addSeparator()
     .addItem('Tela de teste das APIs', 'abrirTeste')
     .addToUi();
 }
