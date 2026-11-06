@@ -30,7 +30,7 @@ Propriedades do script (Configurações do projeto > Propriedades do script): `C
 - Pasta: `CONFIG.DRIVE.PASTA_ID` (drive compartilhado). Requer o serviço avançado **Drive API (v3)** ativado no projeto (Serviços > + > Drive API, identificador `Drive`) para converter `.xlsx`.
 - Arquivo com nome repetido na pasta: usa o atualizado mais recentemente. Cabeçalho na linha 1; colunas achadas pelo nome (sem acentos/maiúsculas).
 - Chave comparada como texto (trim, maiúsculas; número inteiro sem casas decimais). Chave repetida no relatório: vale a primeira linha com o valor preenchido. Sem correspondência: mantém o valor que já estava na base.
-- Atual: `Base_Dados.Pedido` × `Consolidado_Parceiros_Out.xlsx.pedido_codigo` → `Parceiro` gravado em `Parceiro_Nome`.
+- Atual: `Base_Dados.Pedido` × `Consolidado_Parceiros_Out.xlsx.pedido_codigo` → `Parceiro` gravado em `Parceiro_Nome`. O sufixo `_Out` indica parceiros externos (não é mês); o nome do arquivo é fixo.
 - Novos cruzamentos: acrescentar itens em `CRUZAMENTOS`; não criar botões separados.
 
 ## Planilha base
