@@ -19,11 +19,12 @@ Os nomes no GitHub são os mesmos do editor do GAS (ex.: `Planilha.gs` ↔ arqui
 - `Planilha.gs` — menu **Correios** (`onOpen`) e atualização da aba base: lê `Autorização Postagem`, grava `Código convertido`, `Status tracking`, `Data Ocorrencia` e `cidade ultima interação` (Reversa → Rastro).
 - `Relatorios.gs` — lê relatórios da pasta do Drive (`CONFIG.DRIVE.PASTA_ID`, drive compartilhado): planilha Google, `.xlsx`/`.xls` (cópia convertida temporária via serviço avançado Drive API v3, enviada à lixeira) e `.csv`.
 - `Cruzamentos.gs` — lista `CRUZAMENTOS` (arquivo, chave da base, chave do relatório, colunas trazidas) e o botão de menu "Cruzar com relatórios do Drive", que executa todos.
+- `Intelipost.gs` — consulta Jadlog via Web App proxy corporativo da Intelipost (por enquanto só a consulta crua da tela de teste e a amostra de protocolos da base).
 - `Interface.gs` + `Index.html` — interface de teste (HtmlService) com a resposta crua das APIs; App da Web (`doGet`) ou janela na planilha (`abrirTeste`).
 
 ## Configuração
 
-Propriedades do script (Configurações do projeto > Propriedades do script): `CORREIOS_USER`, `CORREIOS_API_KEY`, `CORREIOS_CARTAO`, `CORREIOS_COD_ADMINISTRATIVO`.
+Propriedades do script (Configurações do projeto > Propriedades do script): `CORREIOS_USER`, `CORREIOS_API_KEY`, `CORREIOS_CARTAO`, `CORREIOS_COD_ADMINISTRATIVO`, `INTELIPOST_PROXY_URL` (URL interna do Web App proxy; não versionar).
 
 ## Cruzamentos com relatórios do Drive
 
@@ -32,6 +33,12 @@ Propriedades do script (Configurações do projeto > Propriedades do script): `C
 - Chave comparada como texto (trim, maiúsculas; número inteiro sem casas decimais). Chave repetida no relatório: vale a primeira linha com o valor preenchido. Sem correspondência: mantém o valor que já estava na base.
 - Atual: `Base_Dados.Pedido` × `Consolidado_Parceiros_Out.xlsx.pedido_codigo` → `Parceiro` gravado em `Parceiro_Nome`. O sufixo `_Out` indica parceiros externos (não é mês); o nome do arquivo é fixo.
 - Novos cruzamentos: acrescentar itens em `CRUZAMENTOS`; não criar botões separados.
+
+## Jadlog (Intelipost) — em teste
+
+- Linhas com `Autorização Postagem` de 14 dígitos (Jadlog). Código consultado: `Protocolo` + `RE` (ex.: `4293792261107` → `4293792261107RE`).
+- Web App proxy (`INTELIPOST_PROXY_URL`, host `script.google.com`): `POST { pedidos: [...] }` com `Authorization: Bearer ScriptApp.getOAuthToken()`; resposta `{ sucesso, dados, erro }`. O proxy é restrito ao domínio corporativo: a conta que executa o script precisa ter acesso a ele.
+- Formato de `dados` ainda não conhecido: usar o cartão "Jadlog (Intelipost via proxy)" da tela de teste antes de definir colunas e regras.
 
 ## Planilha base
 
@@ -61,7 +68,7 @@ Aba consultada: **`Base_Dados`** (`CONFIG.PLANILHA.ABA`); a planilha terá outra
 - **Nunca** versionar credenciais: ficam só nas Propriedades do script (ver Configuração).
 - Não registrar tokens, CNPJ, contrato ou dados de destinatários em logs, commits ou arquivos de exemplo.
 - Toda chamada HTTP usa `UrlFetchApp.fetch` (ou `buscarTodos_` em lote) com `muteHttpExceptions: true` e devolve `{ etapa, url, status, body }`.
-- Requisições REST só para `https://api.correios.com.br/`; SOAP só para os hosts em `HOSTS_REVERSA`.
+- Requisições REST só para `https://api.correios.com.br/`; SOAP só para os hosts em `HOSTS_REVERSA`; Intelipost só pelo proxy em `https://script.google.com/` (`INTELIPOST_PROXY_URL`).
 
 ## O que já foi validado (out/2026)
 

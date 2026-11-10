@@ -107,6 +107,19 @@
   </div>
 
   <div class="card">
+    <h1>Teste – Jadlog (Intelipost via proxy)</h1>
+
+    <label for="codigosIntelipost">Protocolos (o "RE" é acrescentado se faltar)</label>
+    <input type="text" id="codigosIntelipost" placeholder="ex.: 4293792261107, 4293792261108">
+    <div class="hint">Separe por vírgula. "Amostra da base" pega as 3 primeiras linhas Jadlog (14 dígitos) da aba base.</div>
+
+    <div class="actions">
+      <button class="secondary" id="btnAmostraJadlog" onclick="amostraJadlogTela()">Amostra da base</button>
+      <button class="primary" id="btnIntelipost" onclick="consultarIntelipostTela()">Consultar Intelipost</button>
+    </div>
+  </div>
+
+  <div class="card">
     <div id="meta" class="hint">Nenhuma requisição feita ainda.</div>
     <pre id="saida"></pre>
   </div>
@@ -145,6 +158,22 @@
       });
     }
 
+    function amostraJadlogTela() {
+      carregando(true, 'Buscando linhas Jadlog na base...');
+      google.script.run.withSuccessHandler(function (lista) {
+        carregando(false);
+        document.getElementById('codigosIntelipost').value = lista.join(', ');
+        document.getElementById('meta').textContent = lista.length ? lista.length + ' protocolo(s) da base.' : 'Nenhuma linha Jadlog encontrada na base.';
+      }).withFailureHandler(onErro).amostraJadlog(3);
+    }
+
+    function consultarIntelipostTela() {
+      carregando(true, 'Consultando Intelipost...');
+      google.script.run.withSuccessHandler(onResposta).withFailureHandler(onErro).consultarIntelipost({
+        codigos: document.getElementById('codigosIntelipost').value
+      });
+    }
+
     function addParam(k, v) {
       const div = document.createElement('div');
       div.className = 'row';
@@ -169,6 +198,8 @@
       document.getElementById('btnConsulta').disabled = on;
       document.getElementById('btnReversa').disabled = on;
       document.getElementById('btnRastro').disabled = on;
+      document.getElementById('btnAmostraJadlog').disabled = on;
+      document.getElementById('btnIntelipost').disabled = on;
       if (on) { document.getElementById('meta').textContent = texto; document.getElementById('saida').textContent = ''; }
     }
 

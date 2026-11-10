@@ -23,6 +23,7 @@ const CONFIG = {
     ABA: 'Base_Dados',      // aba consultada; vazio = primeira aba que tiver a coluna COL_CODIGO no cabeçalho
     LINHA_CABECALHO: 1,
     COL_CODIGO: 'Autorização Postagem',
+    COL_PROTOCOLO: 'Protocolo',       // usado na consulta Jadlog/Intelipost (protocolo + "RE")
     COL_CONVERTIDO: 'Código convertido',
     COL_STATUS: 'Status tracking',
     COL_DATA: 'Data Ocorrencia',
