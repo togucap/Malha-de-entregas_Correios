@@ -6,7 +6,7 @@
  *   autorização (10 dígitos) -> Logística Reversa (SOAP): código de rastreio + status
  *                            -> API Rastro com o "Código convertido": status final
  *   rastreio (13)            -> API Rastro direto com o código da coluna
- *   Jadlog (14)              -> ainda não consultado
+ *   Jadlog (14)              -> Intelipost (proxy) com "Protocolo" + "RE" (se INTELIPOST_PROXY_URL estiver configurada)
  */
 
 const CURSOR_PROP = 'REVERSA_PROXIMA_LINHA';
@@ -128,6 +128,7 @@ function atualizar_(reprocessar, automatico) {
     status: status,
     datas: aba.getRange(cab + 1, colData, total, 1).getValues(),
     cidades: aba.getRange(cab + 1, colCidade, total, 1).getValues(),
+    protocolos: lerColunaOpcional_(aba, cfg.COL_PROTOCOLO, total),
     fuso: aba.getParent().getSpreadsheetTimeZone()
   };
 
@@ -138,10 +139,13 @@ function atualizar_(reprocessar, automatico) {
   const cursorDaAba = props.getProperty(CURSOR_ABA_PROP) === aba.getName();
   const primeiro = cursorDaAba ? Math.max(0, Number(props.getProperty(CURSOR_PROP) || 0) - (cab + 1)) : 0;
   props.setProperty(CURSOR_ABA_PROP, aba.getName());
+  const comJadlog = intelipostConfigurado_() && !!dados.protocolos;
   const pendentes = [];
   for (let i = primeiro; i < total; i++) {
     const tipo = classificarCodigo_(codigos[i][0]);
-    if (tipo !== TIPO_CODIGO.AUTORIZACAO && tipo !== TIPO_CODIGO.RASTREIO) continue;
+    const consultavel = tipo === TIPO_CODIGO.AUTORIZACAO || tipo === TIPO_CODIGO.RASTREIO ||
+      (tipo === TIPO_CODIGO.JADLOG && comJadlog && !!codigoIntelipost_(dados.protocolos[i][0]));
+    if (!consultavel) continue;
     if (!reprocessar && statusFinalizado_(status[i][0])) continue;
     pendentes.push(i);
   }
@@ -157,6 +161,7 @@ function atualizar_(reprocessar, automatico) {
   let erro = null;
   let sobrecarga = null; // mensagem quando o Rastro recusa o lote inteiro (limite/instabilidade)
   const rastro = { ok: 0, falhas: 0, erros: {} };
+  const intelipost = { ok: 0, falhas: 0, erros: {} };
   for (let p = 0; p < pendentes.length; p += cfg.LOTE) {
     const lote = pendentes.slice(p, p + cfg.LOTE);
     proxima = lote[0];
@@ -173,9 +178,8 @@ function atualizar_(reprocessar, automatico) {
       aba.getRange(cab + 1 + de, colData, ate - de + 1, 1).setValues(dados.datas.slice(de, ate + 1));
       aba.getRange(cab + 1 + de, colCidade, ate - de + 1, 1).setValues(dados.cidades.slice(de, ate + 1));
 
-      rastro.ok += r.ok;
-      rastro.falhas += r.falhas;
-      Object.keys(r.erros).forEach(function (m) { rastro.erros[m] = (rastro.erros[m] || 0) + r.erros[m]; });
+      somarContagem_(rastro, r);
+      somarContagem_(intelipost, r.intelipost);
       // Rastro recusou todo o lote com erro temporário (ex.: 429/504): para aqui e tenta este lote
       // de novo mais tarde, em vez de continuar disparando requisições que vão falhar
       if (r.temporarias && r.temporarias === r.ok + r.falhas) {
@@ -194,7 +198,9 @@ function atualizar_(reprocessar, automatico) {
     if (feitas === lote.length) props.setProperty(FALHAS_PROP, '0');
   }
 
-  let msg = feitas + ' linha(s) atualizada(s) na aba "' + aba.getName() + '".' + resumoRastro_(rastro);
+  let msg = feitas + ' linha(s) atualizada(s) na aba "' + aba.getName() + '".' +
+    resumoConsultas_('Rastro', rastro) + resumoConsultas_('Intelipost', intelipost) +
+    (comJadlog ? '' : ' Jadlog não consultado (' + (dados.protocolos ? PROP_INTELIPOST_URL + ' não configurada' : 'coluna "' + cfg.COL_PROTOCOLO + '" não encontrada') + ').');
   console.log(msg);
   if (proxima === null) {
     encerrarCiclo_();
@@ -253,7 +259,9 @@ function encerrarCiclo_() {
  *    do rastro é o veredito do "Status tracking" (resumido, ver Status.gs), da "Data Ocorrencia"
  *    e da "cidade ultima interação".
  *    Se o rastro falhar, valem o status e a data da reversa.
- * Devolve a contagem do Rastro: { ok, falhas, temporarias, erros: { mensagem: quantidade } }.
+ * 3) Intelipost para as linhas Jadlog (ver processarJadlog_).
+ * Devolve a contagem do Rastro { ok, falhas, temporarias, erros: { mensagem: quantidade } }
+ * com a da Intelipost em `intelipost`.
  */
 function processarLote_(lote, dados) {
   const tipo = function (i) { return classificarCodigo_(dados.codigos[i][0]); };
@@ -274,12 +282,14 @@ function processarLote_(lote, dados) {
     });
   }
 
+  const contagem = { ok: 0, falhas: 0, temporarias: 0, erros: {}, intelipost: processarJadlog_(lote, dados, tipo) };
+
   const alvos = []; // { i, codigo }
   lote.forEach(function (i) {
+    if (tipo(i) === TIPO_CODIGO.JADLOG) return;
     const cods = tipo(i) === TIPO_CODIGO.RASTREIO ? [normalizarCodigo_(dados.codigos[i][0])] : codigosDaCelula_(dados.convertidos[i][0]);
     cods.forEach(function (c) { alvos.push({ i: i, codigo: c }); });
   });
-  const contagem = { ok: 0, falhas: 0, temporarias: 0, erros: {} };
   if (!alvos.length) return contagem;
 
   const ultimo = {}; // linha -> evento mais recente entre os códigos da linha
@@ -324,14 +334,60 @@ function marcarRastreioExpirado_(status) {
   return statusValido_(atual) ? atual + ' (' + MARCA_RASTREIO_EXPIRADO + ')' : 'Rastreio expirado';
 }
 
+/**
+ * Linhas Jadlog do lote: uma chamada ao proxy da Intelipost com "Protocolo" + "RE" de cada linha.
+ * O último evento define "Status tracking" (estado geral em ESTADOS_INTELIPOST ou o nome do
+ * evento resumido), "Data Ocorrencia" e "cidade ultima interação" (cidade do evento mais recente
+ * que tiver cidade). Erro só é gravado se a linha não tiver status anterior válido.
+ * Devolve { ok, falhas, erros }.
+ */
+function processarJadlog_(lote, dados, tipo) {
+  const contagem = { ok: 0, falhas: 0, erros: {} };
+  const linhas = dados.protocolos ? lote.filter(function (i) {
+    return tipo(i) === TIPO_CODIGO.JADLOG && codigoIntelipost_(dados.protocolos[i][0]);
+  }) : [];
+  if (!linhas.length) return contagem;
+
+  const codigos = linhas.map(function (i) { return codigoIntelipost_(dados.protocolos[i][0]); });
+  const r = interpretarIntelipost_(consultarIntelipostLote_(codigos));
+
+  linhas.forEach(function (i, k) {
+    const pedido = r.pedidos[codigos[k]];
+    const erro = r.erro || (!pedido ? 'pedido não encontrado na Intelipost' : !pedido.ultimo ? 'pedido sem eventos' : '');
+    if (erro) {
+      contagem.falhas++;
+      contagem.erros[erro] = (contagem.erros[erro] || 0) + 1;
+      if (!statusValido_(dados.status[i][0])) dados.status[i][0] = 'Erro intelipost: ' + erro;
+      return;
+    }
+    contagem.ok++;
+    dados.status[i][0] = statusIntelipost_(pedido);
+    if (pedido.ultimo.data) dados.datas[i][0] = pedido.ultimo.data;
+    if (pedido.cidade) dados.cidades[i][0] = pedido.cidade;
+  });
+  return contagem;
+}
+
+function somarContagem_(total, parcial) {
+  total.ok += parcial.ok;
+  total.falhas += parcial.falhas;
+  Object.keys(parcial.erros).forEach(function (m) { total.erros[m] = (total.erros[m] || 0) + parcial.erros[m]; });
+}
+
 // " Rastro: 5 ok, 45 sem resposta (HTTP 429: ... ×45)." para o toast e o registro de execuções
-function resumoRastro_(r) {
+function resumoConsultas_(nome, r) {
   if (!r.ok && !r.falhas) return '';
   const motivos = Object.keys(r.erros)
     .sort(function (a, b) { return r.erros[b] - r.erros[a]; })
     .slice(0, 3)
     .map(function (m) { return m + ' ×' + r.erros[m]; });
-  return ' Rastro: ' + r.ok + ' ok' + (r.falhas ? ', ' + r.falhas + ' sem resposta (' + motivos.join('; ') + ')' : '') + '.';
+  return ' ' + nome + ': ' + r.ok + ' ok' + (r.falhas ? ', ' + r.falhas + ' sem resposta (' + motivos.join('; ') + ')' : '') + '.';
+}
+
+// Valores da coluna (pelo nome do cabeçalho) ou null se a coluna não existir
+function lerColunaOpcional_(aba, nome, total) {
+  const col = indiceColuna_(aba, nome);
+  return col ? aba.getRange(CONFIG.PLANILHA.LINHA_CABECALHO + 1, col, total, 1).getValues() : null;
 }
 
 /**

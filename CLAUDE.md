@@ -19,7 +19,8 @@ Os nomes no GitHub são os mesmos do editor do GAS (ex.: `Planilha.gs` ↔ arqui
 - `Planilha.gs` — menu **Correios** (`onOpen`) e atualização da aba base: lê `Autorização Postagem`, grava `Código convertido`, `Status tracking`, `Data Ocorrencia` e `cidade ultima interação` (Reversa → Rastro).
 - `Relatorios.gs` — lê relatórios da pasta do Drive (`CONFIG.DRIVE.PASTA_ID`, drive compartilhado): planilha Google, `.xlsx`/`.xls` (cópia convertida temporária via serviço avançado Drive API v3, enviada à lixeira) e `.csv`.
 - `Cruzamentos.gs` — lista `CRUZAMENTOS` (arquivo, chave da base, chave do relatório, colunas trazidas) e o botão de menu "Cruzar com relatórios do Drive", que executa todos.
-- `Intelipost.gs` — consulta Jadlog via Web App proxy corporativo da Intelipost (por enquanto só a consulta crua da tela de teste e a amostra de protocolos da base).
+- `Intelipost.gs` — consulta Jadlog via Web App proxy corporativo da Intelipost: lote (uma chamada por lote), consulta crua da tela de teste e amostra de protocolos da base.
+- `IntelipostParser.gs` — interpreta `{ sucesso, dados }` do proxy: eventos do `detalhes.historico` por pedido, último evento, cidade; `statusIntelipost_`.
 - `Interface.gs` + `Index.html` — interface de teste (HtmlService) com a resposta crua das APIs; App da Web (`doGet`) ou janela na planilha (`abrirTeste`).
 
 ## Configuração
@@ -34,17 +35,20 @@ Propriedades do script (Configurações do projeto > Propriedades do script): `C
 - Atual: `Base_Dados.Pedido` × `Consolidado_Parceiros_Out.xlsx.pedido_codigo` → `Parceiro` gravado em `Parceiro_Nome`. O sufixo `_Out` indica parceiros externos (não é mês); o nome do arquivo é fixo.
 - Novos cruzamentos: acrescentar itens em `CRUZAMENTOS`; não criar botões separados.
 
-## Jadlog (Intelipost) — em teste
+## Jadlog (Intelipost)
 
-- Linhas com `Autorização Postagem` de 14 dígitos (Jadlog). Código consultado: `Protocolo` + `RE` (ex.: `4293792261107` → `4293792261107RE`).
-- Web App proxy (`INTELIPOST_PROXY_URL`, host `script.google.com`): `POST { pedidos: [...] }` com `Authorization: Bearer ScriptApp.getOAuthToken()`; resposta `{ sucesso, dados, erro }`. O proxy é restrito ao domínio corporativo: a conta que executa o script precisa ter acesso a ele.
-- Formato de `dados` ainda não conhecido: usar o cartão "Jadlog (Intelipost via proxy)" da tela de teste antes de definir colunas e regras.
+- Linhas com `Autorização Postagem` de 14 dígitos (Jadlog). Código consultado: `Protocolo` + `RE` (ex.: `4293792261107` → `4293792261107RE`); linha sem protocolo é ignorada.
+- Web App proxy (`INTELIPOST_PROXY_URL`, host `script.google.com`): `POST { pedidos: [...] }` com `Authorization: Bearer ScriptApp.getOAuthToken()`, um POST por lote. O proxy é restrito ao domínio corporativo: a conta que executa o script precisa ter acesso a ele. Sem a propriedade configurada, as linhas Jadlog são puladas e o resumo avisa.
+- Resposta: `{ sucesso, total, dados: [{ pedido, ultimaOcorrencia, endereco, detalhes: { clienteNome, endereço..., historico: [...] } }] }`. **Dados do cliente (`endereco`, `detalhes.clienteNome`, logradouro etc.) não são lidos, gravados nem registrados.**
+- Evento (`detalhes.historico[]`): `shipment_order_volume_state` (estado geral: NEW, CREATED_AT_LOGISTIC_PROVIDER, IN_TRANSIT, DELIVERED…), `shipment_volume_micro_state.default_name` (ex.: "EM TRANSFERENCIA", "COLETA REALIZADA"), `event_date` (ms) / `event_date_iso`, `location.city`/`state_code` (nulos nos eventos iniciais).
+- Gravação: `Status tracking` = `ESTADOS_INTELIPOST[estado]` (DELIVERED → Entregue, CANCELLED → Cancelado, TO_BE_DELIVERED → Saiu para entrega, DELIVERY_FAILED → Não entregue) ou o nome do último evento resumido por `RESUMOS_STATUS` (texto todo em maiúsculas vira "Primeira maiúscula"); `Data Ocorrencia` = `event_date` do último evento; `cidade ultima interação` = cidade do evento mais recente que tiver cidade, em maiúsculas.
+- Pedido ausente em `dados` ou erro do proxy: grava `Erro intelipost: ...` só se a linha não tiver status anterior válido. Resumo "Intelipost: x ok, y sem resposta (...)" no toast/registro.
 
 ## Planilha base
 
 Aba consultada: **`Base_Dados`** (`CONFIG.PLANILHA.ABA`); a planilha terá outras abas. Colunas da aba: Protocolo, Pedido, Cliente Prime, Dt. autorização, Dt. postagem, Autorização Postagem, Tipo da Solicitação, Tipo abertura (+ `Código convertido`, `Status tracking`, `Data Ocorrencia` e `cidade ultima interação`, criadas pelo script se não existirem). Colunas são localizadas pelo nome do cabeçalho (sem diferenciar acentos/maiúsculas).
 
-- Fluxo por lote: (1) autorizações (10) sem `Código convertido` → Logística Reversa (código + status); (2) todo código de rastreio disponível — `Código convertido` ou o próprio código (13) da coluna — → API Rastro (`resultado=U`). Jadlog (14) ainda não é consultado.
+- Fluxo por lote: (1) autorizações (10) sem `Código convertido` → Logística Reversa (código + status); (2) Jadlog (14) → Intelipost (ver seção acima); (3) todo código de rastreio disponível — `Código convertido` ou o próprio código (13) da coluna — → API Rastro (`resultado=U`).
 - Veredito do `Status tracking`: último evento do Rastro, **resumido** (ex.: "Objeto saiu para entrega ao destinatário" → "Saiu para entrega"; "Objeto em transferência - por favor aguarde" → "Objeto em transferência"; "Objeto entregue ao destinatário" → "Entregue"). Sem regra em `RESUMOS_STATUS`, usa o texto antes de " - ". Se o Rastro falhar, fica o status da reversa (descrição mais recente entre `objeto` e `historico`); para códigos de rastreio diretos, grava `Erro rastro: ...`.
 - `Data Ocorrencia`: data/hora do evento usado no status (`dtHrCriado` do Rastro ou data+hora da reversa), gravada como data no fuso da planilha (formato `dd/mm/yyyy` ao criar a coluna).
 - `cidade ultima interação`: `unidade.endereco.cidade` do último evento do Rastro (sem UF). Só vem do Rastro; se o Rastro falhar ou o evento não trouxer cidade, a célula fica como está. Para preencher linhas já finalizadas, usar "Reprocessar todas".
@@ -132,7 +136,7 @@ Número da autorização → `acompanharPedido` (SOAP) → `numero_etiqueta` →
 1. ~~Mover credenciais para Script Properties.~~ (feito)
 2. ~~Parser do XML com histórico agrupado.~~ (feito — `ReversaParser.gs`)
 3. ~~Consulta em lote a partir da planilha (código de rastreio e status).~~ (feito — `Planilha.gs`); avaliar colunas extras: data do status, data de entrega, peso e valor.
-4. ~~Consultar os códigos de rastreio na API Rastro.~~ (feito — `Rastro.gs`); definir a integração Jadlog (14).
+4. ~~Consultar os códigos de rastreio na API Rastro.~~ (feito — `Rastro.gs`); ~~integração Jadlog (14)~~ (feito — `Intelipost.gs`).
 5. Agendar atualização periódica (gatilho recorrente em `atualizarAutorizacoes`), respeitando cotas do `UrlFetchApp`.
 
 ## Referências

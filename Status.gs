@@ -19,6 +19,14 @@ const RESUMOS_STATUS = [
   ['postado', 'Postado']
 ];
 
+// Estado geral da Intelipost (shipment_order_volume_state) que já define o texto, antes do resumo
+const ESTADOS_INTELIPOST = {
+  DELIVERED: 'Entregue',
+  CANCELLED: 'Cancelado',
+  TO_BE_DELIVERED: 'Saiu para entrega',
+  DELIVERY_FAILED: 'Não entregue'
+};
+
 // Trechos que indicam status final; "não entregue" nunca é final.
 // "expirad" também cobre a marca de rastreio expirado (SRO-012), gravada por Planilha.gs.
 const STATUS_FINAIS = ['entregue', 'desistencia', 'expirad', 'cancelad'];
@@ -28,7 +36,8 @@ const MARCA_RASTREIO_EXPIRADO = 'rastreio expirado';
 
 /**
  * Resumo da descrição; sem regra na lista, usa o texto antes de " - "
- * (ex.: "Objeto em transferência - por favor aguarde" -> "Objeto em transferência").
+ * (ex.: "Objeto em transferência - por favor aguarde" -> "Objeto em transferência"; texto todo em
+ * maiúsculas fica só com a primeira letra maiúscula).
  */
 function resumirStatus_(descricao) {
   const original = String(descricao == null ? '' : descricao).trim();
@@ -36,7 +45,9 @@ function resumirStatus_(descricao) {
   for (let k = 0; k < RESUMOS_STATUS.length; k++) {
     if (t.indexOf(RESUMOS_STATUS[k][0]) >= 0) return RESUMOS_STATUS[k][1];
   }
-  return original.split(' - ')[0].replace(/\.$/, '').trim();
+  const curto = original.split(' - ')[0].replace(/\.$/, '').trim();
+  // texto todo em maiúsculas (ex.: Intelipost "COLETA REALIZADA") -> "Coleta realizada"
+  return curto === curto.toUpperCase() ? curto.charAt(0) + curto.slice(1).toLowerCase() : curto;
 }
 
 // Entregue, desistência, prazo expirado, cancelada: não muda mais, não precisa consultar de novo

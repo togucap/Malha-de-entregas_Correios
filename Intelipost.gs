@@ -5,12 +5,16 @@
  *   contas com acesso ao Web App no domínio corporativo.
  * - Código consultado: "Protocolo" da linha + "RE" (ex.: 4293792261107 -> 4293792261107RE),
  *   só para linhas cuja "Autorização Postagem" é Jadlog (14 dígitos).
- * - Requisição: POST { pedidos: [...] }; resposta: { sucesso, dados, erro }.
- * Por enquanto só há a consulta crua (tela de teste), para conhecer o formato de `dados`.
+ * - Requisição: POST { pedidos: [...] }; resposta: { sucesso, total, dados, erro }
+ *   (interpretação em IntelipostParser.gs).
  */
 
 const PROP_INTELIPOST_URL = 'INTELIPOST_PROXY_URL';
 const HOST_INTELIPOST = 'https://script.google.com/';
+
+function intelipostConfigurado_() {
+  return !!String(PropertiesService.getScriptProperties().getProperty(PROP_INTELIPOST_URL) || '').trim();
+}
 
 function urlIntelipost_() {
   const url = String(PropertiesService.getScriptProperties().getProperty(PROP_INTELIPOST_URL) || '').trim();
@@ -34,15 +38,27 @@ function consultarIntelipost(req) {
   const codigos = String(req && req.codigos || '').split(/[\s,;]+/).map(codigoIntelipost_).filter(Boolean);
   if (!codigos.length) return { etapa: 'Validação', url: '', status: 0, body: 'Informe ao menos um protocolo.' };
 
-  const url = urlIntelipost_();
-  const resp = UrlFetchApp.fetch(url, {
+  const requisicao = requisicaoIntelipost_(codigos);
+  const resp = UrlFetchApp.fetch(requisicao.url, requisicao);
+  return { etapa: 'Intelipost (' + codigos.join(', ') + ')', url: requisicao.url, status: resp.getResponseCode(), body: resp.getContentText() };
+}
+
+// Todos os códigos do lote numa única chamada ao proxy (com novas tentativas para 429/5xx)
+function consultarIntelipostLote_(codigos) {
+  const req = requisicaoIntelipost_(codigos);
+  const resp = buscarTodos_([req])[0];
+  return { etapa: 'Intelipost', url: req.url, status: resp.getResponseCode(), body: resp.getContentText() };
+}
+
+function requisicaoIntelipost_(codigos) {
+  return {
+    url: urlIntelipost_(),
     method: 'post',
     contentType: 'application/json',
     payload: JSON.stringify({ pedidos: codigos }),
     headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
     muteHttpExceptions: true
-  });
-  return { etapa: 'Intelipost (' + codigos.join(', ') + ')', url: url, status: resp.getResponseCode(), body: resp.getContentText() };
+  };
 }
 
 // Tela de teste: protocolos (já com "RE") das primeiras `quantidade` linhas Jadlog da aba base
