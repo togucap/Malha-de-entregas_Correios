@@ -1,5 +1,6 @@
 /**
- * Leitura de relatórios da pasta do Drive (CONFIG.DRIVE.PASTA_ID), inclusive em drive compartilhado.
+ * Leitura de relatórios em pastas do Drive (inclusive drive compartilhado); a pasta de cada
+ * relatório é definida no cruzamento (Cruzamentos.gs).
  * Formatos: planilha Google (lida direto), .xlsx/.xls (convertidos numa cópia temporária no
  * Meu Drive, enviada para a lixeira logo depois) e .csv.
  * A conversão do Excel usa o serviço avançado "Drive API" (v3), que precisa estar ativado no projeto.
@@ -10,8 +11,8 @@
  * (linha 0 = cabeçalho); `indice` acha a coluna pelo nome (sem acentos/maiúsculas), -1 se não houver.
  * nomeAba vazio = primeira aba do arquivo.
  */
-function lerRelatorio_(nomeArquivo, nomeAba) {
-  const arquivo = acharArquivoRelatorio_(nomeArquivo);
+function lerRelatorio_(pastaId, nomeArquivo, nomeAba) {
+  const arquivo = acharArquivoRelatorio_(pastaId, nomeArquivo);
   const tipo = arquivo.getMimeType();
   let valores;
 
@@ -24,7 +25,7 @@ function lerRelatorio_(nomeArquivo, nomeAba) {
     } finally {
       DriveApp.getFileById(idCopia).setTrashed(true);
     }
-  } else if (tipo === MimeType.CSV || /\.csv$/i.test(nomeArquivo)) {
+  } else if (tipo === MimeType.CSV || /\.csv$/i.test(arquivo.getName())) {
     valores = Utilities.parseCsv(arquivo.getBlob().getDataAsString('UTF-8'));
   } else {
     throw new Error('Formato do arquivo "' + nomeArquivo + '" não suportado (' + tipo + ').');
@@ -39,13 +40,20 @@ function lerRelatorio_(nomeArquivo, nomeAba) {
   };
 }
 
-// Se houver mais de um arquivo com o mesmo nome na pasta, usa o atualizado mais recentemente
-function acharArquivoRelatorio_(nome) {
-  const pasta = DriveApp.getFolderById(CONFIG.DRIVE.PASTA_ID);
-  const arquivos = pasta.getFilesByName(nome);
+/**
+ * Acha o arquivo pelo nome, com ou sem extensão ("Lista MSPC" acha "Lista MSPC" e "Lista MSPC.xlsx").
+ * Se houver mais de um, usa o atualizado mais recentemente.
+ */
+function acharArquivoRelatorio_(pastaId, nome) {
+  const pasta = DriveApp.getFolderById(pastaId);
+  const alvo = String(nome).trim().toLowerCase();
+  const semExtensao = function (n) { return n.replace(/\.(xlsx|xls|csv)$/i, ''); };
+  const arquivos = pasta.searchFiles('title contains "' + semExtensao(nome).replace(/(["\\])/g, '\\$1') + '" and trashed = false');
   let escolhido = null;
   while (arquivos.hasNext()) {
     const f = arquivos.next();
+    const n = f.getName().toLowerCase();
+    if (n !== alvo && semExtensao(n) !== semExtensao(alvo)) continue;
     if (!escolhido || f.getLastUpdated() > escolhido.getLastUpdated()) escolhido = f;
   }
   if (!escolhido) throw new Error('Arquivo "' + nome + '" não encontrado na pasta do Drive "' + pasta.getName() + '".');

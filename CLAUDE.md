@@ -17,8 +17,8 @@ Os nomes no GitHub são os mesmos do editor do GAS (ex.: `Planilha.gs` ↔ arqui
 - `Status.gs` — resumo do `Status tracking` (`RESUMOS_STATUS`) e status finalizadores (`STATUS_FINAIS`); listas editáveis.
 - `Classificador.gs` — tipo do código pela quantidade de caracteres: 10 dígitos autorização, 13 (`AA999999999AA`) rastreio, 14 dígitos Jadlog.
 - `Planilha.gs` — menu **Correios** (`onOpen`) e atualização da aba base: lê `Autorização Postagem`, grava `Código convertido`, `Status tracking`, `Data Ocorrencia` e `cidade ultima interação` (Reversa → Rastro).
-- `Relatorios.gs` — lê relatórios da pasta do Drive (`CONFIG.DRIVE.PASTA_ID`, drive compartilhado): planilha Google, `.xlsx`/`.xls` (cópia convertida temporária via serviço avançado Drive API v3, enviada à lixeira) e `.csv`.
-- `Cruzamentos.gs` — lista `CRUZAMENTOS` (arquivo, chave da base, chave do relatório, colunas trazidas) e o botão de menu "Cruzar com relatórios do Drive", que executa todos.
+- `Relatorios.gs` — lê relatórios em pastas do Drive (pasta definida em cada cruzamento; drive compartilhado), achando o arquivo pelo nome com ou sem extensão: planilha Google, `.xlsx`/`.xls` (cópia convertida temporária via serviço avançado Drive API v3, enviada à lixeira) e `.csv`.
+- `Cruzamentos.gs` — lista `CRUZAMENTOS` (pasta, arquivo, chave da base, chave do relatório, colunas trazidas ou de presença Sim/Não) e o botão de menu "Cruzar com relatórios do Drive", que executa todos.
 - `Intelipost.gs` — consulta Jadlog via Web App proxy corporativo da Intelipost: lote (uma chamada por lote), consulta crua da tela de teste e amostra de protocolos da base.
 - `IntelipostParser.gs` — interpreta `{ sucesso, dados }` do proxy: eventos do `detalhes.historico` por pedido, último evento, cidade; `statusIntelipost_`.
 - `Interface.gs` + `Index.html` — interface de teste (HtmlService) com a resposta crua das APIs; App da Web (`doGet`) ou janela na planilha (`abrirTeste`).
@@ -29,10 +29,16 @@ Propriedades do script (Configurações do projeto > Propriedades do script): `C
 
 ## Cruzamentos com relatórios do Drive
 
-- Pasta: `CONFIG.DRIVE.PASTA_ID` (drive compartilhado). Requer o serviço avançado **Drive API (v3)** ativado no projeto (Serviços > + > Drive API, identificador `Drive`) para converter `.xlsx`.
-- Arquivo com nome repetido na pasta: usa o atualizado mais recentemente. Cabeçalho na linha 1; colunas achadas pelo nome (sem acentos/maiúsculas).
-- Chave comparada como texto (trim, maiúsculas; número inteiro sem casas decimais). Chave repetida no relatório: vale a primeira linha com o valor preenchido. Sem correspondência: mantém o valor que já estava na base.
-- Atual: `Base_Dados.Pedido` × `Consolidado_Parceiros_Out.xlsx.pedido_codigo` → `Parceiro` gravado em `Parceiro_Nome`. O sufixo `_Out` indica parceiros externos (não é mês); o nome do arquivo é fixo.
+- Cada item de `CRUZAMENTOS` tem a sua pasta (`pasta`, ID no Drive, drive compartilhado). Requer o serviço avançado **Drive API (v3)** ativado no projeto (Serviços > + > Drive API, identificador `Drive`) para converter `.xlsx`.
+- Arquivo achado pelo nome com ou sem extensão (`"Lista MSPC"` acha `Lista MSPC` e `Lista MSPC.xlsx`, não `Lista MSPC - antiga.xlsx`); se houver mais de um, usa o atualizado mais recentemente. Cabeçalho na linha 1; colunas achadas pelo nome (sem acentos/maiúsculas).
+- Chave comparada como texto (trim, maiúsculas; número inteiro sem casas decimais).
+- Coluna trazida (`{ relatorio, base }`): chave repetida no relatório usa a primeira linha com o valor preenchido; sem correspondência mantém o valor que já estava na base.
+- Coluna de presença (`{ base, presenca: true }`): toda linha com chave recebe "Sim" ou "Não" conforme o relatório atual; linha sem chave fica vazia.
+- Um cruzamento com erro (arquivo/coluna não encontrada) não impede os demais; o toast lista o resultado de cada um.
+- Atuais (todos com `Base_Dados.Pedido`):
+  - `Consolidado_Parceiros_Out.xlsx` (pasta `1Zk2F78…`) `pedido_codigo` → `Parceiro` em `Parceiro_Nome`. O sufixo `_Out` indica parceiros externos (não é mês); o nome do arquivo é fixo.
+  - `Lista MSPC` (entradas no estoque, pasta `12d0yus…`) `Num do pedido` → presença em `Entrada_Lista` (Sim/Não).
+  - `Relatorio Ordem de Serviço - Consolidado` (pasta `15e1Qbj…`) `Número do Pedido` → `Nome da Assistência Técnica` em `Assistencia_Tecnica`.
 - Novos cruzamentos: acrescentar itens em `CRUZAMENTOS`; não criar botões separados.
 
 ## Jadlog (Intelipost)
