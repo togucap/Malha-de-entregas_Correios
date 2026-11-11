@@ -17,7 +17,7 @@ Os nomes no GitHub são os mesmos do editor do GAS (ex.: `Planilha.gs` ↔ arqui
 - `Status.gs` — resumo do `Status tracking` (`RESUMOS_STATUS`) e status finalizadores (`STATUS_FINAIS`); listas editáveis.
 - `Classificador.gs` — tipo do código pela quantidade de caracteres: 10 dígitos autorização, 13 (`AA999999999AA`) rastreio, 14 dígitos Jadlog.
 - `Planilha.gs` — menu **Correios** (`onOpen`) e atualização da aba base: lê `Autorização Postagem`, grava `Código convertido`, `Status tracking`, `Data Ocorrencia` e `cidade ultima interação` (Reversa → Rastro).
-- `Relatorios.gs` — lê relatórios em pastas do Drive (pasta definida em cada cruzamento; drive compartilhado), achando o arquivo pelo nome com ou sem extensão: planilha Google, `.xlsx`/`.xls` (cópia convertida temporária via serviço avançado Drive API v3, enviada à lixeira) e `.csv`.
+- `Relatorios.gs` — percorre relatórios em pastas do Drive (pasta definida em cada cruzamento; drive compartilhado), achando o arquivo pelo nome com ou sem extensão: planilha Google, `.xlsx`/`.xls` (cópia convertida temporária via serviço avançado Drive API v3, enviada à lixeira) e `.csv` (baixado em partes, linha a linha).
 - `Cruzamentos.gs` — lista `CRUZAMENTOS` (pasta, arquivo, chave da base, chave do relatório, colunas trazidas ou de presença Sim/Não) e o botão de menu "Cruzar com relatórios do Drive", que executa todos.
 - `Intelipost.gs` — consulta Jadlog via Web App proxy corporativo da Intelipost: lote (uma chamada por lote), consulta crua da tela de teste e amostra de protocolos da base.
 - `IntelipostParser.gs` — interpreta `{ sucesso, dados }` do proxy: eventos do `detalhes.historico` por pedido, último evento, cidade; `statusIntelipost_`.
@@ -31,6 +31,9 @@ Propriedades do script (Configurações do projeto > Propriedades do script): `C
 
 - Cada item de `CRUZAMENTOS` tem a sua pasta (`pasta`, ID no Drive, drive compartilhado). Requer o serviço avançado **Drive API (v3)** ativado no projeto (Serviços > + > Drive API, identificador `Drive`) para converter `.xlsx`.
 - Arquivo achado pelo nome com ou sem extensão (`"Lista MSPC"` acha `Lista MSPC` e `Lista MSPC.xlsx`, não `Lista MSPC - antiga.xlsx`); se houver mais de um, usa o atualizado mais recentemente. Cabeçalho na linha 1; colunas achadas pelo nome (sem acentos/maiúsculas).
+- CSV: baixado em partes de 4 MB (`Range` em `https://www.googleapis.com/drive/v3/files/{id}?alt=media`, token de `ScriptApp.getOAuthToken()`), sem o limite de 50 MB do `getBlob` ("excede o tamanho de arquivo máximo"). Separador detectado no cabeçalho (`;` do Excel brasileiro, `,` ou tab); codificação UTF-8 ou ISO-8859-1 (Excel), BOM removido; aspas e quebras de linha dentro de aspas tratadas.
+- Só as chaves que existem na base são guardadas durante a leitura (memória). Os cruzamentos param antes de `TEMPO_MAXIMO_MS`; o que não couber avisa "execute de novo".
+- Coluna não encontrada: o erro lista as colunas lidas do cabeçalho (diagnóstico de separador/codificação).
 - Chave comparada como texto (trim, maiúsculas; número inteiro sem casas decimais).
 - Coluna trazida (`{ relatorio, base }`): chave repetida no relatório usa a primeira linha com o valor preenchido; sem correspondência mantém o valor que já estava na base.
 - Coluna de presença (`{ base, presenca: true }`): toda linha com chave recebe "Sim" ou "Não" conforme o relatório atual; linha sem chave fica vazia.
@@ -78,7 +81,7 @@ Aba consultada: **`Base_Dados`** (`CONFIG.PLANILHA.ABA`); a planilha terá outra
 - **Nunca** versionar credenciais: ficam só nas Propriedades do script (ver Configuração).
 - Não registrar tokens, CNPJ, contrato ou dados de destinatários em logs, commits ou arquivos de exemplo.
 - Toda chamada HTTP usa `UrlFetchApp.fetch` (ou `buscarTodos_` em lote) com `muteHttpExceptions: true` e devolve `{ etapa, url, status, body }`.
-- Requisições REST só para `https://api.correios.com.br/`; SOAP só para os hosts em `HOSTS_REVERSA`; Intelipost só pelo proxy em `https://script.google.com/` (`INTELIPOST_PROXY_URL`).
+- Requisições REST só para `https://api.correios.com.br/`; SOAP só para os hosts em `HOSTS_REVERSA`; Intelipost só pelo proxy em `https://script.google.com/` (`INTELIPOST_PROXY_URL`); download de relatórios CSV só em `https://www.googleapis.com/drive/v3/files/`.
 
 ## O que já foi validado (out/2026)
 

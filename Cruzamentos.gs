@@ -13,6 +13,8 @@
  *   correspondência mantém o valor que já estava na base.
  * - Presença: toda linha com chave recebe "Sim" ou "Não" (reflete o relatório atual); linha sem chave fica vazia.
  * - Um cruzamento com erro (arquivo ou coluna não encontrada) não impede os demais.
+ * - Só os pedidos que existem na base são guardados durante a leitura; a execução para antes do
+ *   limite de tempo do Apps Script (os cruzamentos que não couberem avisam para executar de novo).
  */
 
 const CRUZAMENTOS = [
@@ -61,9 +63,11 @@ function cruzarRelatorios() {
   if (!lock.tryLock(1000)) return 'Há uma atualização em andamento. Tente novamente em alguns minutos.';
   try {
     const aba = obterAba_();
+    const prazo = Date.now() + CONFIG.PLANILHA.TEMPO_MAXIMO_MS; // antes do limite de 6 min do Apps Script
     const msg = CRUZAMENTOS.map(function (c) {
+      if (Date.now() > prazo) return c.arquivo + ': não executado (tempo esgotado; execute de novo)';
       try {
-        return executarCruzamento_(aba, c);
+        return executarCruzamento_(aba, c, prazo);
       } catch (e) {
         return c.arquivo + ': ERRO – ' + (e && e.message ? e.message : e);
       }
@@ -75,57 +79,51 @@ function cruzarRelatorios() {
   }
 }
 
-function executarCruzamento_(aba, c) {
+function executarCruzamento_(aba, c, prazo) {
   const cab = CONFIG.PLANILHA.LINHA_CABECALHO;
   const colChave = indiceColuna_(aba, c.chaveBase);
   if (!colChave) throw new Error('coluna "' + c.chaveBase + '" não encontrada na aba "' + aba.getName() + '"');
-
-  const rel = lerRelatorio_(c.pasta, c.arquivo, c.aba);
-  const iChave = rel.indice(c.chaveRelatorio);
-  if (iChave < 0) throw new Error('coluna "' + c.chaveRelatorio + '" não encontrada em "' + rel.nome + '"');
-  const iColunas = c.colunas.map(function (col) {
-    if (col.presenca) return -1;
-    const i = rel.indice(col.relatorio);
-    if (i < 0) throw new Error('coluna "' + col.relatorio + '" não encontrada em "' + rel.nome + '"');
-    return i;
-  });
-
-  // chaves presentes no relatório e, para cada coluna trazida, chave -> primeiro valor preenchido
-  const presentes = {};
-  const mapas = c.colunas.map(function () { return {}; });
-  for (let r = 1; r < rel.valores.length; r++) {
-    const chave = chaveCruzamento_(rel.valores[r][iChave]);
-    if (!chave) continue;
-    presentes[chave] = true;
-    iColunas.forEach(function (iCol, k) {
-      if (iCol < 0) return;
-      const v = rel.valores[r][iCol];
-      if (v !== '' && v != null && !(chave in mapas[k])) mapas[k][chave] = v;
-    });
-  }
-
-  const colDestino = c.colunas.map(function (col) { return garantirColuna_(aba, col.base); });
   const total = aba.getLastRow() - cab;
-  if (total <= 0) return rel.nome + ': nenhuma linha na base.';
-  const chaves = aba.getRange(cab + 1, colChave, total, 1).getValues();
+  if (total <= 0) return c.arquivo + ': nenhuma linha na base.';
+
+  // só as chaves que existem na base são guardadas (relatórios grandes não estouram a memória)
+  const chaves = aba.getRange(cab + 1, colChave, total, 1).getValues().map(function (r) { return chaveCruzamento_(r[0]); });
+  const naBase = Object.create(null);
+  chaves.forEach(function (k) { if (k) naBase[k] = true; });
+
+  const trazidas = c.colunas.filter(function (col) { return !col.presenca; });
+  const presentes = Object.create(null);
+  const mapas = trazidas.map(function () { return Object.create(null); }); // chave -> primeiro valor preenchido
+  const colunasLidas = [c.chaveRelatorio].concat(trazidas.map(function (col) { return col.relatorio; }));
+
+  const rel = percorrerRelatorio_(c.pasta, c.arquivo, c.aba, colunasLidas, function (v) {
+    const chave = chaveCruzamento_(v[0]);
+    if (!chave || !naBase[chave]) return;
+    presentes[chave] = true;
+    for (let k = 0; k < trazidas.length; k++) {
+      const x = v[k + 1];
+      if (x !== '' && x != null && !(chave in mapas[k])) mapas[k][chave] = x;
+    }
+  }, prazo);
 
   let encontrados = 0, semCorrespondencia = 0;
-  c.colunas.forEach(function (col, k) {
-    const rng = aba.getRange(cab + 1, colDestino[k], total, 1);
+  chaves.forEach(function (k) { if (k) presentes[k] ? encontrados++ : semCorrespondencia++; });
+
+  c.colunas.forEach(function (col) {
+    const rng = aba.getRange(cab + 1, garantirColuna_(aba, col.base), total, 1);
     const valores = rng.getValues();
+    const mapa = col.presenca ? null : mapas[trazidas.indexOf(col)];
     for (let i = 0; i < total; i++) {
-      const chave = chaveCruzamento_(chaves[i][0]);
+      const chave = chaves[i];
       if (!chave) continue;
-      const achou = col.presenca ? !!presentes[chave] : chave in mapas[k];
-      if (col.presenca) valores[i][0] = achou ? PRESENCA_SIM : PRESENCA_NAO;
-      else if (achou) valores[i][0] = mapas[k][chave];
-      if (k === 0) achou ? encontrados++ : semCorrespondencia++;
+      if (col.presenca) valores[i][0] = presentes[chave] ? PRESENCA_SIM : PRESENCA_NAO;
+      else if (chave in mapa) valores[i][0] = mapa[chave];
     }
     rng.setValues(valores);
   });
 
-  return rel.nome + ': ' + encontrados + ' pedido(s) encontrado(s), ' + semCorrespondencia +
-    ' não encontrado(s) (' + c.colunas.map(function (col) { return col.base; }).join(', ') + ').';
+  return rel.nome + ' (' + rel.linhas + ' linhas): ' + encontrados + ' pedido(s) encontrado(s), ' +
+    semCorrespondencia + ' não encontrado(s) (' + c.colunas.map(function (col) { return col.base; }).join(', ') + ').';
 }
 
 // Número inteiro vira texto sem casas decimais (o Excel pode trazer 12345 como número)
