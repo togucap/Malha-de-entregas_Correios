@@ -18,7 +18,7 @@ Os nomes no GitHub são os mesmos do editor do GAS (ex.: `Planilha.gs` ↔ arqui
 - `Classificador.gs` — tipo do código pela quantidade de caracteres: 10 dígitos autorização, 13 (`AA999999999AA`) rastreio, 14 dígitos Jadlog.
 - `Planilha.gs` — menu **Correios** (`onOpen`) e atualização da aba base: lê `Autorização Postagem`, grava `Código convertido`, `Status tracking`, `Data Ocorrencia` e `cidade ultima interação` (Reversa → Rastro).
 - `Relatorios.gs` — percorre relatórios em pastas do Drive (pasta definida em cada cruzamento; drive compartilhado), achando o arquivo pelo nome com ou sem extensão: planilha Google, `.xlsx`/`.xls` (cópia convertida temporária via serviço avançado Drive API v3, enviada à lixeira) e `.csv` (baixado em partes, linha a linha).
-- `Cruzamentos.gs` — lista `CRUZAMENTOS` (pasta, arquivo, chave da base, chave do relatório, colunas trazidas ou de presença Sim/Não) e o botão de menu "Cruzar com relatórios do Drive", que executa todos.
+- `Cruzamentos.gs` — lista `CRUZAMENTOS` (id, pasta, arquivo, chave da base, chave do relatório, chave composta com rastreio, exclusão de linhas de outro cruzamento, colunas trazidas ou de presença Sim/Não) e o botão de menu "Cruzar com relatórios do Drive", que executa todos na ordem da lista.
 - `Intelipost.gs` — consulta Jadlog via Web App proxy corporativo da Intelipost: lote (uma chamada por lote), consulta crua da tela de teste e amostra de protocolos da base.
 - `IntelipostParser.gs` — interpreta `{ sucesso, dados }` do proxy: eventos do `detalhes.historico` por pedido, último evento, cidade; `statusIntelipost_`.
 - `Interface.gs` + `Index.html` — interface de teste (HtmlService) com a resposta crua das APIs; App da Web (`doGet`) ou janela na planilha (`abrirTeste`).
@@ -37,11 +37,13 @@ Propriedades do script (Configurações do projeto > Propriedades do script): `C
 - Chave comparada como texto (trim, maiúsculas; número inteiro sem casas decimais).
 - Coluna trazida (`{ relatorio, base }`): chave repetida no relatório usa a primeira linha com o valor preenchido; sem correspondência mantém o valor que já estava na base.
 - Coluna de presença (`{ base, presenca: true }`): toda linha com chave recebe "Sim" ou "Não" conforme o relatório atual; linha sem chave fica vazia.
+- Chave composta (`rastreioRelatorio`): pedido + código de rastreio. Do lado da base, os códigos da linha são os do `Código convertido` e o código da própria `Autorização Postagem` (rastreio de 13, Jadlog…); casa se qualquer um deles bater. Rastreio normalizado (sem espaços, maiúsculas).
+- `ignorarLinhasDe: '<id>'`: as linhas que tiveram correspondência no cruzamento indicado (executado antes, na mesma rodada) não são cruzadas; coluna de presença fica vazia. Se o cruzamento de que depende falhar, este não é executado.
 - Um cruzamento com erro (arquivo/coluna não encontrada) não impede os demais; o toast lista o resultado de cada um.
 - Atuais (todos com `Base_Dados.Pedido`):
   - `Consolidado_Parceiros_Out.xlsx` (pasta `1Zk2F78…`) `pedido_codigo` → `Parceiro` em `Parceiro_Nome`. O sufixo `_Out` indica parceiros externos (não é mês); o nome do arquivo é fixo.
-  - `Lista MSPC` (entradas no estoque, pasta `12d0yus…`) `Num do pedido` → presença em `Entrada_Lista` (Sim/Não).
-  - `Relatorio Ordem de Serviço - Consolidado` (pasta `15e1Qbj…`) `Número do Pedido` → `Nome da Assistência Técnica` em `Assistencia_Tecnica`.
+  - `Relatorio Ordem de Serviço - Consolidado` (id `ordemServico`, pasta `15e1Qbj…`): chave `Número do Pedido` + `Código do Rastreio da Postagem` → `Nome da Assistência Técnica` em `Assistencia_Tecnica`.
+  - `Lista MSPC` (id `listaMspc`, entradas no estoque, pasta `12d0yus…`) `Num do pedido` → presença em `Entrada_Lista` (Sim/Não), **exceto** as linhas que casaram na Ordem de Serviço (pedido + rastreio), que ficam vazias.
 - Novos cruzamentos: acrescentar itens em `CRUZAMENTOS`; não criar botões separados.
 
 ## Jadlog (Intelipost)
