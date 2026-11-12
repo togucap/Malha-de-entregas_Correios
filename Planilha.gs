@@ -50,10 +50,11 @@ function menuCancelarContinuacao() {
   }
   try {
     encerrarCiclo_();
+    limparEstadoCruzamentos_();
   } finally {
     lock.releaseLock();
   }
-  ss.toast('Continuação automática cancelada. A próxima atualização começa do início da planilha.', 'Correios', 15);
+  ss.toast('Continuações automáticas canceladas (atualização e cruzamentos). A próxima execução começa do início.', 'Correios', 15);
 }
 
 /**
@@ -73,7 +74,17 @@ function continuarAtualizacao(e) {
   // gatilhos de uso único continuam listados depois de disparar; apaga só o que disparou
   removerContinuacao_(e && e.triggerUid);
   const reprocessar = PropertiesService.getScriptProperties().getProperty(REPROCESSAR_PROP) === 'S';
-  console.log(executarComLock_(reprocessar, true));
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(1000)) {
+    // outra execução (ex.: cruzamentos) em andamento: tenta de novo depois, sem perder o ciclo
+    agendarContinuacao_(reprocessar, CONFIG.PLANILHA.ESPERA_CONTINUACAO_MS);
+    return;
+  }
+  try {
+    console.log(atualizar_(reprocessar, true));
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function executarComLock_(reprocessar, automatico) {
@@ -230,15 +241,24 @@ function atualizar_(reprocessar, automatico) {
 /* ---------- Continuação automática (gatilho de tempo de uso único) ---------- */
 
 function agendarContinuacao_(reprocessar, esperaMs) {
-  removerContinuacao_();
   PropertiesService.getScriptProperties().setProperty(REPROCESSAR_PROP, reprocessar ? 'S' : 'N');
-  ScriptApp.newTrigger(FUNCAO_CONTINUACAO).timeBased().after(esperaMs).create();
+  agendarGatilho_(FUNCAO_CONTINUACAO, esperaMs);
 }
 
-// Sem uid, apaga todos os gatilhos de continuação; com uid, só o que disparou
 function removerContinuacao_(uid) {
+  removerGatilhos_(FUNCAO_CONTINUACAO, uid);
+}
+
+// Gatilho de tempo de uso único para `funcao` (substitui o que estiver pendente para ela)
+function agendarGatilho_(funcao, esperaMs) {
+  removerGatilhos_(funcao);
+  ScriptApp.newTrigger(funcao).timeBased().after(esperaMs).create();
+}
+
+// Sem uid, apaga todos os gatilhos de `funcao`; com uid, só o que disparou
+function removerGatilhos_(funcao, uid) {
   ScriptApp.getProjectTriggers().forEach(function (t) {
-    if (t.getHandlerFunction() !== FUNCAO_CONTINUACAO) return;
+    if (t.getHandlerFunction() !== funcao) return;
     if (uid && t.getUniqueId() !== uid) return;
     ScriptApp.deleteTrigger(t);
   });

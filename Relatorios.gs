@@ -7,6 +7,8 @@
  *   que precisa estar ativado no projeto), enviada para a lixeira logo depois;
  * - .csv: baixado em partes (Range da Drive API), linha a linha, sem o limite de 50 MB do
  *   getBlob; separador (; , tab) e codificação (UTF-8 ou ISO-8859-1, comum no Excel) detectados.
+ *   Se o prazo chegar no meio do arquivo, a leitura para numa quebra de linha e devolve onde
+ *   continuar (`retomada`), para a próxima execução seguir dali.
  */
 
 const URL_DOWNLOAD_DRIVE = 'https://www.googleapis.com/drive/v3/files/';
@@ -15,16 +17,18 @@ const CSV_PARTE_BYTES = 4 * 1024 * 1024;
 /**
  * Percorre as linhas de dados do relatório chamando aoLer(valores) com os valores das `colunas`
  * pedidas (nomes do cabeçalho, sem diferenciar acentos/maiúsculas), na mesma ordem.
- * Lança erro se alguma coluna não existir ou se passar do `prazo` (Date.now() em ms).
- * nomeAba vazio = primeira aba (não se aplica a CSV). Devolve { nome, linhas }.
+ * Lança erro se alguma coluna não existir. nomeAba vazio = primeira aba (não se aplica a CSV).
+ * CSV: para quando passar do `prazo` (Date.now() em ms) e continua de `retomada` numa próxima chamada.
+ * Devolve { nome, linhas, retomada } — `retomada` é null quando o arquivo foi lido até o fim.
  */
-function percorrerRelatorio_(pastaId, nomeArquivo, nomeAba, colunas, aoLer, prazo) {
+function percorrerRelatorio_(pastaId, nomeArquivo, nomeAba, colunas, aoLer, prazo, retomada) {
   const arquivo = acharArquivoRelatorio_(pastaId, nomeArquivo);
   const tipo = arquivo.getMimeType();
   const nome = arquivo.getName();
 
   if (tipo === MimeType.CSV || /\.csv$/i.test(nome)) {
-    return { nome: nome, linhas: percorrerCsv_(arquivo, colunas, aoLer, prazo) };
+    const r = percorrerCsv_(arquivo, colunas, aoLer, prazo, retomada);
+    return { nome: nome, linhas: r.linhas, retomada: r.retomada };
   }
 
   let valores;
@@ -46,7 +50,7 @@ function percorrerRelatorio_(pastaId, nomeArquivo, nomeAba, colunas, aoLer, praz
     const linha = valores[r];
     aoLer(idx.map(function (i) { return linha[i]; }));
   }
-  return { nome: nome, linhas: Math.max(0, valores.length - 1) };
+  return { nome: nome, linhas: Math.max(0, valores.length - 1), retomada: null };
 }
 
 // Posição de cada coluna pedida no cabeçalho; o erro lista as colunas encontradas, para diagnóstico
@@ -64,18 +68,26 @@ function indicesColunas_(cabecalho, colunas, nome) {
 
 /* ---------- CSV em partes ---------- */
 
-function percorrerCsv_(arquivo, colunas, aoLer, prazo) {
+/**
+ * retomada = { arquivoId, atualizado, tamanho, posicao, charset, delim, idx, linhas } devolvida por
+ * uma chamada anterior; só é usada se o arquivo não mudou desde então (senão lê do início).
+ * Devolve { linhas, retomada } (retomada null = leu até o fim).
+ */
+function percorrerCsv_(arquivo, colunas, aoLer, prazo, retomada) {
   const nome = arquivo.getName();
   const tamanho = arquivo.getSize();
+  const atualizado = arquivo.getLastUpdated().getTime();
   const url = URL_DOWNLOAD_DRIVE + arquivo.getId() + '?alt=media&supportsAllDrives=true';
   const token = ScriptApp.getOAuthToken();
+  const continuar = retomada && retomada.arquivoId === arquivo.getId() && retomada.atualizado === atualizado;
 
   let resto = [];        // bytes depois da última quebra de linha da parte anterior
-  let charset = null;
-  let delim = null;
-  let idx = null;
+  let charset = continuar ? retomada.charset : null;
+  let delim = continuar ? retomada.delim : null;
+  let idx = continuar ? retomada.idx : null;
   let pendente = null;   // registro com quebra de linha dentro de aspas, ainda incompleto
-  let linhas = 0;
+  let linhas = continuar ? retomada.linhas : 0;
+  const primeiroByte = continuar ? retomada.posicao : 0;
 
   const lerLinha = function (linha) {
     if (linha.charCodeAt(linha.length - 1) === 13) linha = linha.slice(0, -1); // \r do CRLF
@@ -90,9 +102,14 @@ function percorrerCsv_(arquivo, colunas, aoLer, prazo) {
     aoLer(idx.map(function (i) { return campos[i] === undefined ? '' : campos[i]; }));
   };
 
-  for (let inicio = 0; inicio < tamanho; inicio += CSV_PARTE_BYTES) {
-    if (prazo && Date.now() > prazo) {
-      throw new Error('tempo esgotado lendo "' + nome + '" (' + Math.round(100 * inicio / tamanho) + '% lido)');
+  for (let inicio = primeiroByte; inicio < tamanho; inicio += CSV_PARTE_BYTES) {
+    // prazo: para numa quebra de linha (fora de aspas) e devolve onde continuar
+    if (prazo && Date.now() > prazo && pendente === null) {
+      return {
+        linhas: linhas,
+        retomada: { arquivoId: arquivo.getId(), atualizado: atualizado, tamanho: tamanho, posicao: inicio - resto.length,
+          charset: charset, delim: delim, idx: idx, linhas: linhas }
+      };
     }
     const fim = Math.min(tamanho, inicio + CSV_PARTE_BYTES) - 1;
     const resp = UrlFetchApp.fetch(url, {
@@ -122,7 +139,7 @@ function percorrerCsv_(arquivo, colunas, aoLer, prazo) {
     if (status === 200) break;
   }
   if (!idx) throw new Error('"' + nome + '" está vazio');
-  return linhas;
+  return { linhas: linhas, retomada: null };
 }
 
 // Separador mais frequente na linha de cabeçalho
