@@ -63,6 +63,37 @@ function respostaReversa_(url, resp) {
   return { etapa: 'Logística Reversa', url: url, status: resp.getResponseCode(), body: resp.getContentText() };
 }
 
+/**
+ * Tela de teste: WSDL do Web Service + esquemas XSD importados por ele, para conferir as operações
+ * disponíveis (ex.: solicitarPostagemReversa) e os campos de cada uma. Só leitura.
+ */
+function descreverReversa(req) {
+  const url = String((req && req.url) || CONFIG.ENDPOINTS.REVERSA).trim().replace(/\?wsdl$/i, '');
+  const permitido = function (u) { return HOSTS_REVERSA.some(function (h) { return u.indexOf(h) === 0; }); };
+  if (!permitido(url)) {
+    return { etapa: 'Validação', url: url, status: 0, body: 'URL bloqueada: use apenas endereços do Web Service de Logística Reversa dos Correios.' };
+  }
+  const params = { headers: { Authorization: basicAuth_() }, muteHttpExceptions: true };
+  const resp = UrlFetchApp.fetch(url + '?wsdl', params);
+  let body = resp.getContentText();
+
+  const xsds = [];
+  body.replace(/schemaLocation="([^"]+)"/g, function (_, loc) { if (xsds.indexOf(loc) < 0) xsds.push(loc); });
+  xsds.forEach(function (loc) {
+    const abs = /^https?:/.test(loc) ? loc : url + loc.replace(/^[^?]*/, '');
+    if (!permitido(abs)) { body += '\n\n<!-- esquema ignorado (host não permitido): ' + abs + ' -->'; return; }
+    const x = UrlFetchApp.fetch(abs, params);
+    body += '\n\n<!-- ==== ' + abs + ' (HTTP ' + x.getResponseCode() + ') ==== -->\n' + x.getContentText();
+  });
+
+  const operacoes = [];
+  body.replace(/<(?:\w+:)?operation\s+name="([^"]+)"/g, function (_, nome) { if (operacoes.indexOf(nome) < 0) operacoes.push(nome); });
+  return {
+    etapa: 'WSDL Logística Reversa' + (operacoes.length ? ' – operações: ' + operacoes.join(', ') : ''),
+    url: url + '?wsdl', status: resp.getResponseCode(), body: body
+  };
+}
+
 // Tela de teste: devolve a resposta XML crua do Web Service
 function consultarReversa(req) {
   const r = montarRequisicaoReversa_(req);

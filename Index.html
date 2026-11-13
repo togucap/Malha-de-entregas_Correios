@@ -86,6 +86,7 @@
 
     <div class="actions">
       <button class="primary" id="btnReversa" onclick="consultarRev()">Consultar reversa</button>
+      <button class="secondary" id="btnWsdlReversa" onclick="descreverRev()">Ver operações (WSDL)</button>
     </div>
   </div>
 
@@ -150,6 +151,12 @@
       });
     }
 
+    function descreverRev() {
+      carregando(true, 'Lendo o WSDL do Web Service...');
+      google.script.run.withSuccessHandler(onResposta).withFailureHandler(onErro)
+        .descreverReversa({ url: document.getElementById('urlRev').value });
+    }
+
     function consultarRastroTela() {
       carregando(true, 'Consultando Rastro...');
       google.script.run.withSuccessHandler(onResposta).withFailureHandler(onErro).consultarRastro({
@@ -197,6 +204,7 @@
       document.getElementById('btnAuth').disabled = on;
       document.getElementById('btnConsulta').disabled = on;
       document.getElementById('btnReversa').disabled = on;
+      document.getElementById('btnWsdlReversa').disabled = on;
       document.getElementById('btnRastro').disabled = on;
       document.getElementById('btnAmostraJadlog').disabled = on;
       document.getElementById('btnIntelipost').disabled = on;

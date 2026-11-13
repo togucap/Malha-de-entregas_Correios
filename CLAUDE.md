@@ -10,7 +10,7 @@ Os nomes no GitHub são os mesmos do editor do GAS (ex.: `Planilha.gs` ↔ arqui
 - `Http.gs` — `buscarTodos_`: `fetchAll` em grupos de `CONFIG.HTTP.SIMULTANEAS` com novas tentativas para 429/502/503/504 (usado por Reversa e Rastro em lote).
 - `Auth.gs` — API Token (REST), cache do token e GET autenticado com renovação em 401.
 - `PrePostagem.gs` — consulta da Pré-Postagem e diagnóstico do OpenAPI (`listarParametrosConsulta`).
-- `Reversa.gs` — montagem/envio do SOAP de Logística Reversa (individual e em lote com `fetchAll`).
+- `Reversa.gs` — montagem/envio do SOAP de Logística Reversa (individual e em lote com `fetchAll`) e leitura do WSDL/XSD para a tela de teste (`descreverReversa`).
 - `ReversaParser.gs` — parser do XML (`XmlService`): uma entrada por autorização, histórico agrupado, status atual.
 - `Rastro.gs` — API Rastro (REST): consulta individual (tela de teste) e em lote com `fetchAll`, renovando o token em 401.
 - `RastroParser.gs` — parser do JSON do Rastro: eventos (mais recente primeiro), último evento, mensagem de erro (ex.: SRO-020).
@@ -119,6 +119,12 @@ Aba consultada: **`Base_Dados`** (`CONFIG.PLANILHA.ABA`); a planilha terá outra
 - Método `acompanharPedido`: `codAdministrativo` (8 dígitos), `tipoBusca` (`H` histórico / `U` último), `tipoSolicitacao` (`A` autorização / `C` coleta), `numeroPedido`.
   - O número da autorização foi aceito com **10 dígitos** (formato usado pela empresa).
 - Método `acompanharPedidoPorData`: `codAdministrativo`, `tipoSolicitacao`, `data` (**DD/MM/AAAA** na requisição).
+
+#### Solicitação de autorização de postagem — em pesquisa (não confirmado)
+- Mesmo Web Service SOAP (mesmo endpoint, Basic Auth e `codAdministrativo`). Operações esperadas pela documentação pública: `solicitarPostagemReversa` (cria autorização `tipo` A ou coleta C/CA), `solicitarPostagemSimultanea`, `cancelarPedido`, `solicitarRange`, `calcularDigitoVerificador`, além de `acompanharPedido`/`acompanharPedidoPorData`.
+- **Confirmar no WSDL antes de implementar**: botão "Ver operações (WSDL)" do cartão de Logística Reversa na tela de teste (`descreverReversa`, só leitura; segue os XSD importados).
+- Atenção: em produção, `solicitarPostagemReversa` cria uma autorização real (pode notificar o cliente e gerar custo quando postada). Testar em homologação (`apphom.correios.com.br`, credenciais de homologação) ou com dados internos.
+- Alternativa REST: API Pré-Postagem com `logisticaReversa = S` (as autorizações atuais da empresa não vêm dela).
 
 #### Estrutura da resposta (`acompanharPedido`)
 ```
