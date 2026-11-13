@@ -22,6 +22,8 @@
     .ok { color: #137333; font-weight: bold; } .err { color: #c5221f; font-weight: bold; }
     pre { background: #1e1e1e; color: #d4d4d4; padding: 12px; border-radius: 6px; overflow: auto; max-height: 420px; font-size: 12px; white-space: pre-wrap; word-break: break-all; margin: 0; }
     .hint { font-size: 12px; color: #666; }
+    textarea { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font: 12px monospace; }
+    .perigo { background: #c5221f; color: #fff; }
   </style>
 </head>
 <body>
@@ -91,6 +93,31 @@
   </div>
 
   <div class="card">
+    <h1>Teste – Solicitar autorização de postagem (Logística Reversa)</h1>
+    <div class="hint">Usa o endpoint do cartão acima. codAdministrativo e cartão vêm das Propriedades do script.
+      Valide primeiro: "Validar" confere os dados sem criar nada.</div>
+
+    <label for="dadosSolic">Dados da solicitação (JSON)</label>
+    <textarea id="dadosSolic" rows="16" spellcheck="false"></textarea>
+
+    <div class="actions">
+      <button class="secondary" id="btnModeloSolic" onclick="modeloSolic()">Carregar modelo</button>
+      <button class="primary" id="btnValidarSolic" onclick="solicitacao('validar')">Validar (não cria)</button>
+    </div>
+
+    <label style="font-weight:normal;margin-top:14px">
+      <input type="checkbox" id="confirmaSolic"> Confirmo que quero criar ou cancelar uma autorização <b>real</b> nos Correios
+    </label>
+    <div class="actions">
+      <button class="perigo" id="btnSolicitar" onclick="solicitacao('solicitar')">Solicitar autorização</button>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <input type="text" id="numeroCancelar" inputmode="numeric" placeholder="número da autorização a cancelar">
+      <button class="perigo" id="btnCancelarSolic" onclick="solicitacao('cancelar')">Cancelar autorização</button>
+    </div>
+  </div>
+
+  <div class="card">
     <h1>Teste – API Rastro (código de rastreio)</h1>
 
     <label for="codigoRastro">Código de rastreio</label>
@@ -151,6 +178,27 @@
       });
     }
 
+    function modeloSolic() {
+      google.script.run.withSuccessHandler(function (m) {
+        document.getElementById('dadosSolic').value = JSON.stringify(m, null, 2);
+      }).withFailureHandler(onErro).modeloSolicitacaoReversa();
+    }
+
+    function solicitacao(acao) {
+      if (acao !== 'validar' && !document.getElementById('confirmaSolic').checked) {
+        document.getElementById('meta').innerHTML = '<span class="err">Marque a confirmação para solicitar ou cancelar uma autorização real.</span>';
+        return;
+      }
+      carregando(true, acao === 'validar' ? 'Validando...' : acao === 'solicitar' ? 'Solicitando autorização...' : 'Cancelando autorização...');
+      document.getElementById('confirmaSolic').checked = false;
+      google.script.run.withSuccessHandler(onResposta).withFailureHandler(onErro).solicitacaoReversa({
+        acao: acao,
+        url: document.getElementById('urlRev').value,
+        dados: document.getElementById('dadosSolic').value,
+        numero: document.getElementById('numeroCancelar').value
+      });
+    }
+
     function descreverRev() {
       carregando(true, 'Lendo o WSDL do Web Service...');
       google.script.run.withSuccessHandler(onResposta).withFailureHandler(onErro)
@@ -205,6 +253,9 @@
       document.getElementById('btnConsulta').disabled = on;
       document.getElementById('btnReversa').disabled = on;
       document.getElementById('btnWsdlReversa').disabled = on;
+      ['btnModeloSolic', 'btnValidarSolic', 'btnSolicitar', 'btnCancelarSolic'].forEach(function (id) {
+        document.getElementById(id).disabled = on;
+      });
       document.getElementById('btnRastro').disabled = on;
       document.getElementById('btnAmostraJadlog').disabled = on;
       document.getElementById('btnIntelipost').disabled = on;

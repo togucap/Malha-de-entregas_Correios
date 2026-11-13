@@ -11,6 +11,7 @@ Os nomes no GitHub são os mesmos do editor do GAS (ex.: `Planilha.gs` ↔ arqui
 - `Auth.gs` — API Token (REST), cache do token e GET autenticado com renovação em 401.
 - `PrePostagem.gs` — consulta da Pré-Postagem e diagnóstico do OpenAPI (`listarParametrosConsulta`).
 - `Reversa.gs` — montagem/envio do SOAP de Logística Reversa (individual e em lote com `fetchAll`) e leitura do WSDL/XSD para a tela de teste (`descreverReversa`).
+- `ReversaSolicitacao.gs` — solicitação de autorização (tela de teste): validar (`validarPostagemReversa`, não cria), solicitar (`solicitarPostagemReversa`) e cancelar (`cancelarPedido`), JSON → XML na ordem do WSDL.
 - `ReversaParser.gs` — parser do XML (`XmlService`): uma entrada por autorização, histórico agrupado, status atual.
 - `Rastro.gs` — API Rastro (REST): consulta individual (tela de teste) e em lote com `fetchAll`, renovando o token em 401.
 - `RastroParser.gs` — parser do JSON do Rastro: eventos (mais recente primeiro), último evento, mensagem de erro (ex.: SRO-020).
@@ -120,11 +121,13 @@ Aba consultada: **`Base_Dados`** (`CONFIG.PLANILHA.ABA`); a planilha terá outra
   - O número da autorização foi aceito com **10 dígitos** (formato usado pela empresa).
 - Método `acompanharPedidoPorData`: `codAdministrativo`, `tipoSolicitacao`, `data` (**DD/MM/AAAA** na requisição).
 
-#### Solicitação de autorização de postagem — em pesquisa (não confirmado)
-- Mesmo Web Service SOAP (mesmo endpoint, Basic Auth e `codAdministrativo`). Operações esperadas pela documentação pública: `solicitarPostagemReversa` (cria autorização `tipo` A ou coleta C/CA), `solicitarPostagemSimultanea`, `cancelarPedido`, `solicitarRange`, `calcularDigitoVerificador`, além de `acompanharPedido`/`acompanharPedidoPorData`.
-- **Confirmar no WSDL antes de implementar**: botão "Ver operações (WSDL)" do cartão de Logística Reversa na tela de teste (`descreverReversa`, só leitura; segue os XSD importados).
-- Atenção: em produção, `solicitarPostagemReversa` cria uma autorização real (pode notificar o cliente e gerar custo quando postada). Testar em homologação (`apphom.correios.com.br`, credenciais de homologação) ou com dados internos.
-- Alternativa REST: API Pré-Postagem com `logisticaReversa = S` (as autorizações atuais da empresa não vêm dela).
+#### Solicitação de autorização de postagem (WSDL confirmado, nov/2026)
+- Mesmo Web Service SOAP (mesmo endpoint, Basic Auth). Operações do WSDL: `solicitarPostagemReversa`, **`validarPostagemReversa`** (confere os dados sem criar), `solicitarPostagemSimultanea`/`validarPostagemSimultanea`, `cancelarPedido` (`codAdministrativo`, `numeroPedido`, `tipo`), `revalidarPrazoAutorizacaoPostagem` (`numeroPedido`, `qtdeDias`), `solicitarRange` (`tipo`, `servico`, `quantidade` → `faixa_inicial`/`faixa_final`), `calcularDigitoVerificador`, `consultarResumoColeta` (`codigoObjeto`), `sobreWebService`, `acompanharPedido`/`acompanharPedidoPorData`. Leitura do WSDL: botão "Ver operações (WSDL)" (`descreverReversa`).
+- `solicitarPostagemReversa` (xs:sequence, ordem obrigatória): `codAdministrativo`, `codigo_servico`, `cartao`, `destinatario` (nome, logradouro, numero, complemento, bairro, referencia, cidade, uf, cep, ddd, telefone, ddd_celular, celular, email, identificacao, ciencia_conteudo_proibido), `coletas_solicitadas`* = coletaReversa: [coleta] tipo, id_cliente, valor_declarado, descricao, cklist, documento*, remetente (nome … email, ciencia_conteudo_proibido, identificacao, ddd_celular, celular, sms, restricao_anac, documento_estrangeiro), produto* (codigo, tipo, qtd); [extensão] numero, ag, cartao, servico_adicional, ar, obj_col* (item, desc, entrega, num, id).
+- `validarPostagemReversa`: `codAdministrativo`, `codigo_servico`, `cartao`, `cep_destinatario`, `coleta` (uma coletaReversa) → `cod_erro`/`msg_erro`.
+- Resposta `retornoPostagem`: status_processamento, data/hora_processamento, cod_erro, msg_erro, `resultado_solicitacao`* (tipo, id_cliente, **numero_coleta** = número da autorização, numero_etiqueta, id_obj, status_objeto, prazo, data/hora_solicitacao, codigo_erro, descricao_erro).
+- Implementado só na tela de teste (`ReversaSolicitacao.gs`, cartão "Solicitar autorização de postagem"): JSON → XML na ordem do WSDL (`ESQUEMA_REVERSA`), campos vazios omitidos; "Validar" usa `validarPostagemReversa` (primeira coleta); "Solicitar" e "Cancelar" exigem marcar a confirmação. **Em produção, solicitar cria uma autorização real** (pode notificar o cliente e gerar custo quando postada): validar antes e cancelar autorizações de teste.
+- Pendentes: `codigo_servico` reverso do contrato, endereço do CD (destinatario), origem dos dados do remetente (cliente), significado de `tipo`/`servico_adicional`/`ar`/`ag` nos valores do contrato.
 
 #### Estrutura da resposta (`acompanharPedido`)
 ```

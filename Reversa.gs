@@ -42,20 +42,21 @@ function montarRequisicaoReversa_(req) {
       '</ser:acompanharPedido>';
   }
 
+  return { url: url, params: paramsSoapReversa_(corpo) };
+}
+
+// Parâmetros do UrlFetchApp para um corpo SOAP (operação com prefixo "ser:") do Web Service
+function paramsSoapReversa_(corpo) {
   const envelope =
     '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" ' +
     'xmlns:ser="http://service.logisticareversa.correios.com.br/">' +
     '<soapenv:Header/><soapenv:Body>' + corpo + '</soapenv:Body></soapenv:Envelope>';
-
   return {
-    url: url,
-    params: {
-      method: 'post',
-      contentType: 'text/xml; charset=utf-8',
-      headers: { SOAPAction: '""', Authorization: basicAuth_() },
-      payload: envelope,
-      muteHttpExceptions: true
-    }
+    method: 'post',
+    contentType: 'text/xml; charset=utf-8',
+    headers: { SOAPAction: '""', Authorization: basicAuth_() },
+    payload: envelope,
+    muteHttpExceptions: true
   };
 }
 
