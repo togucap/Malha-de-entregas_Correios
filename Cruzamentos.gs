@@ -38,7 +38,10 @@ const CRUZAMENTOS = [
     aba: '',
     chaveBase: 'Pedido',
     chaveRelatorio: 'pedido_codigo',
-    colunas: [{ relatorio: 'Parceiro', base: 'Parceiro_Nome' }]
+    colunas: [
+      { relatorio: 'Parceiro', base: 'Parceiro_Nome' },
+      { relatorio: 'parceiro_pedido', base: 'Pedido_Parceiro' }
+    ]
   },
   {
     id: 'ordemServico',
