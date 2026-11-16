@@ -19,6 +19,7 @@ Os nomes no GitHub são os mesmos do editor do GAS (ex.: `Planilha.gs` ↔ arqui
 - `Classificador.gs` — tipo do código pela quantidade de caracteres: 10 dígitos autorização, 13 (`AA999999999AA`) rastreio, 14 dígitos Jadlog.
 - `Planilha.gs` — menu **Correios** (`onOpen`) e atualização da aba base: lê `Autorização Postagem`, grava `Código convertido`, `Status tracking`, `Data Ocorrencia` e `cidade ultima interação` (Reversa → Rastro).
 - `Relatorios.gs` — percorre relatórios em pastas do Drive (pasta definida em cada cruzamento; drive compartilhado), achando o arquivo pelo nome com ou sem extensão: planilha Google, `.xlsx`/`.xls` (cópia convertida temporária via serviço avançado Drive API v3, enviada à lixeira) e `.csv` (baixado em partes, linha a linha).
+- `Importacao.gs` — botão "Importar protocolos do Drive": alimenta a aba base com o relatório `Consolidado_Protocolos` (remove duplicados e linhas sem autorização, acrescenta protocolos novos; cópia oculta `<aba>_backup` antes de gravar).
 - `Cruzamentos.gs` — lista `CRUZAMENTOS` (id, pasta, arquivo, chave da base, chave do relatório, chave composta com rastreio, exclusão de linhas de outro cruzamento, colunas trazidas ou de presença Sim/Não) e o botão de menu "Cruzar com relatórios do Drive", que executa todos na ordem da lista.
 - `Intelipost.gs` — consulta Jadlog via Web App proxy corporativo da Intelipost: lote (uma chamada por lote), consulta crua da tela de teste e amostra de protocolos da base.
 - `IntelipostParser.gs` — interpreta `{ sucesso, dados }` do proxy: eventos do `detalhes.historico` por pedido, último evento, cidade; `statusIntelipost_`.
@@ -27,6 +28,13 @@ Os nomes no GitHub são os mesmos do editor do GAS (ex.: `Planilha.gs` ↔ arqui
 ## Configuração
 
 Propriedades do script (Configurações do projeto > Propriedades do script): `CORREIOS_USER`, `CORREIOS_API_KEY`, `CORREIOS_CARTAO`, `CORREIOS_COD_ADMINISTRATIVO`, `INTELIPOST_PROXY_URL` (URL interna do Web App proxy; não versionar).
+
+## Importação de protocolos (`Importacao.gs`)
+
+- Fonte: `Consolidado_Protocolos` (.xlsx) na pasta `1ToW75Ft…` do Drive (`IMPORTACAO_PROTOCOLOS`; o ID também pode ser do próprio arquivo). Colunas do relatório: Protocolo, Pedido, Cliente Prime, Valor Venda, CEP do Pedido, Dt. abertura SAC, Dt. abertura RMA, Dt. autorização, Dt. postagem, Autorização Postagem, Tipo da Solicitação, Status RMA, Tipo abertura. Só as 8 da base são copiadas: Protocolo, Pedido, Cliente Prime, Dt. autorização, Dt. postagem, Autorização Postagem, Tipo da Solicitação, Tipo abertura.
+- Ordem: (1) lê o relatório (se falhar, a base não muda); (2) na base, remove linhas sem `Autorização Postagem` e protocolos duplicados — fica a primeira ocorrência, com as colunas calculadas que já tinha; (3) acrescenta no fim os protocolos do relatório que não estão na base e têm `Autorização Postagem` (os que já existem são ignorados, sem atualizar nada; repetidos no relatório entram uma vez).
+- Grava o bloco inteiro de uma vez por cima e limpa as linhas que sobraram no fim; antes, copia a aba para a aba oculta `<aba>_backup` (substitui a anterior). Apaga o cursor da atualização de status (linhas mudaram de posição). Recusa rodar com uma rodada de cruzamentos em andamento (os cruzamentos guardam posições de linha).
+- Execução única (sem continuação automática); resumo no toast.
 
 ## Cruzamentos com relatórios do Drive
 

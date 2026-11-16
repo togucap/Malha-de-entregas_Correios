@@ -189,10 +189,17 @@ function utf8Valido_(bytes) {
 
 /**
  * Acha o arquivo pelo nome, com ou sem extensão ("Lista MSPC" acha "Lista MSPC" e "Lista MSPC.xlsx").
- * Se houver mais de um, usa o atualizado mais recentemente.
+ * Se houver mais de um, usa o atualizado mais recentemente. Se o ID for de um arquivo (e não de
+ * uma pasta), usa o próprio arquivo.
  */
 function acharArquivoRelatorio_(pastaId, nome) {
-  const pasta = DriveApp.getFolderById(pastaId);
+  let pasta;
+  try {
+    pasta = DriveApp.getFolderById(pastaId);
+    pasta.getName(); // confirma que é uma pasta acessível
+  } catch (e) {
+    try { return DriveApp.getFileById(pastaId); } catch (e2) { throw new Error('pasta ou arquivo "' + pastaId + '" não encontrado no Drive (ou sem acesso)'); }
+  }
   const alvo = String(nome).trim().toLowerCase();
   const semExtensao = function (n) { return n.replace(/\.(xlsx|xls|csv)$/i, ''); };
   const arquivos = pasta.searchFiles('title contains "' + semExtensao(nome).replace(/(["\\])/g, '\\$1') + '" and trashed = false');
