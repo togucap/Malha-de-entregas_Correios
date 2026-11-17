@@ -13,6 +13,7 @@
  *                      nele não são cruzadas aqui (a coluna fica vazia)
  *   colunas            gravadas na base, de dois tipos:
  *     { relatorio: 'Coluna do relatório', base: 'Coluna da base' } -> traz o valor da coluna
+ *       + texto: true -> coluna formatada como texto antes de gravar (números longos sem notação científica)
  *     { base: 'Coluna da base', presenca: true }                    -> "Sim" / "Não" se a chave consta no relatório
  *
  * Regras:
@@ -40,7 +41,7 @@ const CRUZAMENTOS = [
     chaveRelatorio: 'pedido_codigo',
     colunas: [
       { relatorio: 'Parceiro', base: 'Parceiro_Nome' },
-      { relatorio: 'parceiro_pedido', base: 'Pedido_Parceiro' }
+      { relatorio: 'parceiro_pedido', base: 'Pedido_Parceiro', texto: true }
     ]
   },
   {
@@ -224,10 +225,15 @@ function executarEtapaCruzamento_(aba, c, prazo, retomada) {
   // colunas trazidas: grava só as linhas que ganharam valor nesta parte
   trazidas.forEach(function (col, k) {
     const linhas = Object.keys(novosValores[k]);
-    if (!linhas.length) return;
-    const rng = aba.getRange(cab + 1, garantirColuna_(aba, col.base), total, 1);
+    if (!linhas.length && !col.texto) return;
+    const rng = aba.getRange(cab + 1, garantirColuna_(aba, col.base, col.texto ? '@' : null), total, 1);
     const valores = rng.getValues();
     linhas.forEach(function (i) { valores[i][0] = novosValores[k][i]; });
+    if (col.texto) {
+      // formata como texto ANTES de gravar e converte números (inclusive os já gravados) com todos os dígitos
+      rng.setNumberFormat('@');
+      valores.forEach(function (r) { r[0] = numeroComoTexto_(r[0]); });
+    }
     rng.setValues(valores);
   });
 
@@ -280,6 +286,12 @@ function codigosRastreioDaBase_(aba, total) {
     linhas.push(lista);
   }
   return linhas;
+}
+
+// Número -> texto com todos os dígitos (1.23456789012E+15 -> "1234567890120000"); outros valores ficam iguais
+function numeroComoTexto_(v) {
+  if (typeof v !== 'number') return v;
+  return Number.isInteger(v) && Math.abs(v) < 1e21 ? v.toFixed(0) : String(v);
 }
 
 // Número inteiro vira texto sem casas decimais (o Excel pode trazer 12345 como número)
