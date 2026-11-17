@@ -7,18 +7,53 @@
       <input class="input" id="buscaOut" type="search" autocomplete="off" spellcheck="false"
              placeholder="Pedido, autorização, código convertido, parceiro ou pedido do parceiro">
     </div>
+
+    <!-- filtros de seleção múltipla (js/FiltroMultiplo); data-coluna = coluna filtrada -->
     <div class="campo">
-      <label class="campo-rotulo" for="filtroStatusOut">Status tracking</label>
-      <select class="select" id="filtroStatusOut" data-coluna="Status tracking"><option value="">Todos</option></select>
+      <span class="campo-rotulo">Status tracking</span>
+      <div class="filtro-multiplo" data-filtro-multiplo data-coluna="Status tracking" data-rotulo="Status" data-ao-mudar="aplicarFiltrosGlobais">
+        <button type="button" class="filtro-botao" data-acao="abrir" aria-haspopup="true" aria-expanded="false">
+          <span class="filtro-titulo" data-titulo>Status (Todos)</span>
+          <svg class="icone" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+        </button>
+        <div class="filtro-menu" data-menu hidden>
+          <input class="input" type="search" data-acao="buscar" placeholder="Buscar status…" autocomplete="off">
+          <div class="filtro-acoes"><button type="button" data-acao="todos">Selecionar todos</button><button type="button" data-acao="limpar">Limpar</button></div>
+          <ul class="filtro-lista" data-lista></ul>
+        </div>
+      </div>
     </div>
+
     <div class="campo">
-      <label class="campo-rotulo" for="filtroParceiroOut">Parceiro</label>
-      <select class="select" id="filtroParceiroOut" data-coluna="Parceiro_Nome"><option value="">Todos</option></select>
+      <span class="campo-rotulo">Parceiro</span>
+      <div class="filtro-multiplo" data-filtro-multiplo data-coluna="Parceiro_Nome" data-rotulo="Parceiro" data-ao-mudar="aplicarFiltrosGlobais">
+        <button type="button" class="filtro-botao" data-acao="abrir" aria-haspopup="true" aria-expanded="false">
+          <span class="filtro-titulo" data-titulo>Parceiro (Todos)</span>
+          <svg class="icone" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+        </button>
+        <div class="filtro-menu" data-menu hidden>
+          <input class="input" type="search" data-acao="buscar" placeholder="Buscar parceiro…" autocomplete="off">
+          <div class="filtro-acoes"><button type="button" data-acao="todos">Selecionar todos</button><button type="button" data-acao="limpar">Limpar</button></div>
+          <ul class="filtro-lista" data-lista></ul>
+        </div>
+      </div>
     </div>
+
     <div class="campo">
-      <label class="campo-rotulo" for="filtroEntradaOut">Entrada na lista</label>
-      <select class="select" id="filtroEntradaOut" data-coluna="Entrada_Lista"><option value="">Todos</option></select>
+      <span class="campo-rotulo">Entrada na lista</span>
+      <div class="filtro-multiplo" data-filtro-multiplo data-coluna="Entrada_Lista" data-rotulo="Entrada" data-ao-mudar="aplicarFiltrosGlobais">
+        <button type="button" class="filtro-botao" data-acao="abrir" aria-haspopup="true" aria-expanded="false">
+          <span class="filtro-titulo" data-titulo>Entrada (Todos)</span>
+          <svg class="icone" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+        </button>
+        <div class="filtro-menu" data-menu hidden>
+          <input class="input" type="search" data-acao="buscar" placeholder="Buscar…" autocomplete="off">
+          <div class="filtro-acoes"><button type="button" data-acao="todos">Selecionar todos</button><button type="button" data-acao="limpar">Limpar</button></div>
+          <ul class="filtro-lista" data-lista></ul>
+        </div>
+      </div>
     </div>
+
     <div class="acoes-filtro">
       <button class="btn btn-fantasma" id="limparOut" type="button">Limpar</button>
       <button class="btn btn-secundario" id="atualizarOut" type="button" title="Ler a base de novo">
@@ -31,8 +66,13 @@
   <div class="aviso aviso-perigo" id="avisoOut" role="alert" hidden></div>
 
   <div class="resumo-tabela">
+    <!-- visão: "Em aberto" (ainda consultado pelas APIs) ou "Finalizado"; contagens já com pesquisa e filtros -->
+    <div class="segmentado" role="group" aria-label="Visão">
+      <button type="button" class="ativo" data-visao="aberto" aria-pressed="true">Em aberto <span class="numero" id="qtdAbertoOut"></span></button>
+      <button type="button" data-visao="finalizado" aria-pressed="false">Finalizado <span class="numero" id="qtdFinalizadoOut"></span></button>
+    </div>
     <span id="infoOut" class="texto-apoio">Carregando…</span>
-    <span id="atualizadoOut" class="texto-apoio"></span>
+    <span id="atualizadoOut" class="texto-apoio resumo-direita"></span>
   </div>
 
   <div class="tabela-caixa tabela-tela">
@@ -43,7 +83,7 @@
     <div class="vazio" id="vazioOut" hidden>
       <div class="vazio-icone"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></div>
       <div class="vazio-titulo">Nenhum protocolo encontrado</div>
-      <div class="vazio-texto">Ajuste a pesquisa ou os filtros.</div>
+      <div class="vazio-texto" id="vazioTextoOut">Ajuste a pesquisa ou os filtros.</div>
     </div>
   </div>
 

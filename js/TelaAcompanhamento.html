@@ -1,7 +1,14 @@
 <script>
 /*
- * Tela "Acompanhamento - OUT": carrega dadosAcompanhamentoOut() na primeira vez que a tela é aberta
- * e faz pesquisa e filtros no navegador. Mostra 500 linhas por vez ("Mostrar mais").
+ * Tela "Acompanhamento - OUT": carrega dadosAcompanhamentoOut() na primeira vez que a tela é aberta;
+ * visão, pesquisa e filtros rodam no navegador. Mostra 500 linhas por vez ("Mostrar mais").
+ *
+ * - Visão "Em aberto" (padrão) = status ainda consultado pelas APIs; "Finalizado" = status final
+ *   (mesma regra da atualização, calculada no servidor). Nenhuma linha é descartada: só muda a visão.
+ * - Pesquisa: vale nas duas visões; cada botão da visão mostra quantos resultados tem com a
+ *   pesquisa e os filtros atuais.
+ * - Filtros: js/FiltroMultiplo (seleção múltipla; nenhum marcado = todos). As opções de cada filtro
+ *   vêm das linhas da visão atual. Toda mudança chama aplicarFiltrosGlobais().
  */
 (function () {
   var VISTA = 'acompanhamento-out';
@@ -12,7 +19,7 @@
   var MONO = ['Protocolo', 'Pedido', 'Autorização Postagem', 'Código convertido', 'Pedido_Parceiro'];
   var VAZIO = '__vazio__';
 
-  var estado = { carregado: false, colunas: [], linhas: [], filtradas: [], limite: POR_PAGINA };
+  var estado = { carregado: false, colunas: [], linhas: [], visao: 'aberto', filtradas: [], naOutraVisao: 0, limite: POR_PAGINA };
 
   function $(id) { return document.getElementById(id); }
 
@@ -27,6 +34,8 @@
   }
 
   function indice(coluna) { return estado.colunas.indexOf(coluna); }
+  function filtros() { return Array.prototype.slice.call(document.querySelectorAll('[data-vista="' + VISTA + '"] [data-filtro-multiplo]')); }
+  function naVisao(l) { return estado.visao === 'finalizado' ? l.finalizada : !l.finalizada; }
 
   /* ---------- Carregamento ---------- */
 
@@ -46,8 +55,8 @@
     $('atualizarOut').disabled = false;
     estado.colunas = d.colunas;
     var busca = BUSCA.map(indice);
-    estado.linhas = d.linhas.map(function (v) {
-      return { v: v, busca: normalizar(busca.map(function (i) { return v[i]; }).join(' ')) };
+    estado.linhas = d.linhas.map(function (v, k) {
+      return { v: v, finalizada: !!(d.finalizadas && d.finalizadas[k]), busca: normalizar(busca.map(function (i) { return v[i]; }).join(' ')) };
     });
     $('atualizadoOut').textContent = 'Base lida em ' + d.atualizadoEm;
     if (d.faltando && d.faltando.length) {
@@ -72,46 +81,75 @@
 
   /* ---------- Filtros ---------- */
 
-  function selects() { return Array.prototype.slice.call(document.querySelectorAll('.barra-filtros select[data-coluna]')); }
-
-  // opções de cada filtro: valores distintos da base, com a quantidade
+  // opções de cada filtro: valores distintos das linhas da visão atual, com a quantidade
   function montarFiltros() {
-    selects().forEach(function (sel) {
-      var i = indice(sel.getAttribute('data-coluna'));
+    filtros().forEach(function (raiz) {
+      var i = indice(raiz.getAttribute('data-coluna'));
       var contagem = {};
       estado.linhas.forEach(function (l) {
+        if (!naVisao(l)) return;
         var v = i < 0 ? '' : l.v[i];
         var chave = v === '' ? VAZIO : v;
         contagem[chave] = (contagem[chave] || 0) + 1;
       });
-      var atual = sel.value;
-      var valores = Object.keys(contagem).sort(function (a, b) {
+      var opcoes = Object.keys(contagem).sort(function (a, b) {
         if (a === VAZIO) return 1;
         if (b === VAZIO) return -1;
         return a.localeCompare(b, 'pt-BR');
+      }).map(function (v) {
+        return { valor: v, rotulo: v === VAZIO ? '(vazio)' : v, qtd: contagem[v] };
       });
-      sel.innerHTML = '<option value="">Todos</option>' + valores.map(function (v) {
-        var rotulo = v === VAZIO ? '(vazio)' : v;
-        return '<option value="' + escapar(v) + '">' + escapar(rotulo) + ' (' + contagem[v] + ')</option>';
-      }).join('');
-      sel.value = contagem[atual] ? atual : '';
+      FiltroMultiplo.preencher(raiz, opcoes);
     });
   }
 
-  function aplicar() {
+  // linha passa na pesquisa e nos filtros marcados (independente da visão)
+  function criterios() {
     var termo = normalizar($('buscaOut').value);
-    var filtros = selects().filter(function (s) { return s.value; }).map(function (s) {
-      return { i: indice(s.getAttribute('data-coluna')), valor: s.value === VAZIO ? '' : s.value };
-    });
-    estado.filtradas = estado.linhas.filter(function (l) {
+    var ativos = filtros().map(function (raiz) {
+      var marcados = FiltroMultiplo.selecionados(raiz);
+      var conjunto = {};
+      marcados.forEach(function (v) { conjunto[v === VAZIO ? '' : v] = true; });
+      return { i: indice(raiz.getAttribute('data-coluna')), conjunto: conjunto, vazio: !marcados.length };
+    }).filter(function (f) { return !f.vazio; });
+
+    return function (l) {
       if (termo && l.busca.indexOf(termo) < 0) return false;
-      for (var k = 0; k < filtros.length; k++) {
-        if ((filtros[k].i < 0 ? '' : l.v[filtros[k].i]) !== filtros[k].valor) return false;
+      for (var k = 0; k < ativos.length; k++) {
+        if (!ativos[k].conjunto[ativos[k].i < 0 ? '' : l.v[ativos[k].i]]) return false;
       }
       return true;
+    };
+  }
+
+  // chamada pelos filtros (data-ao-mudar), pela pesquisa e pela troca de visão
+  function aplicar() {
+    var passa = criterios();
+    var abertos = 0, finalizados = 0;
+    estado.filtradas = [];
+    estado.linhas.forEach(function (l) {
+      if (!passa(l)) return;
+      if (l.finalizada) finalizados++; else abertos++;
+      if (naVisao(l)) estado.filtradas.push(l);
     });
+    $('qtdAbertoOut').textContent = abertos.toLocaleString('pt-BR');
+    $('qtdFinalizadoOut').textContent = finalizados.toLocaleString('pt-BR');
     estado.limite = POR_PAGINA;
+    estado.naOutraVisao = estado.visao === 'aberto' ? finalizados : abertos;
     desenharLinhas();
+  }
+  window.aplicarFiltrosGlobais = aplicar;
+
+  function trocarVisao(visao) {
+    if (visao === estado.visao) return;
+    estado.visao = visao;
+    document.querySelectorAll('[data-vista="' + VISTA + '"] [data-visao]').forEach(function (b) {
+      var ativo = b.getAttribute('data-visao') === visao;
+      b.classList.toggle('ativo', ativo);
+      b.setAttribute('aria-pressed', ativo ? 'true' : 'false');
+    });
+    montarFiltros(); // opções e contagens da nova visão (marcações que existirem continuam)
+    aplicar();
   }
 
   /* ---------- Tabela ---------- */
@@ -146,17 +184,21 @@
   }
 
   function desenharLinhas() {
+    var naOutraVisao = estado.naOutraVisao; // resultados da pesquisa/filtros na visão que não está aberta
     var visiveis = estado.filtradas.slice(0, estado.limite);
     $('tabelaOut').tBodies[0].innerHTML = visiveis.map(function (l) {
       return '<tr>' + estado.colunas.map(function (c, i) { return celula(c, l.v[i]); }).join('') + '</tr>';
     }).join('');
 
-    var total = estado.linhas.length, achadas = estado.filtradas.length;
+    var achadas = estado.filtradas.length;
+    var nomeVisao = estado.visao === 'aberto' ? 'em aberto' : 'finalizado(s)';
+    var outra = estado.visao === 'aberto' ? 'Finalizado' : 'Em aberto';
     $('vazioOut').hidden = achadas > 0;
     $('tabelaOut').hidden = achadas === 0;
-    $('infoOut').textContent = (achadas === total
-      ? total.toLocaleString('pt-BR') + ' protocolo(s) com parceiro'
-      : achadas.toLocaleString('pt-BR') + ' de ' + total.toLocaleString('pt-BR') + ' protocolo(s)') +
+    $('vazioTextoOut').textContent = naOutraVisao
+      ? naOutraVisao.toLocaleString('pt-BR') + ' resultado(s) na visão "' + outra + '".'
+      : 'Ajuste a pesquisa ou os filtros.';
+    $('infoOut').textContent = achadas.toLocaleString('pt-BR') + ' protocolo(s) ' + nomeVisao +
       (achadas > visiveis.length ? ' · mostrando ' + visiveis.length.toLocaleString('pt-BR') : '');
     $('maisOut').hidden = achadas <= visiveis.length;
   }
@@ -166,10 +208,12 @@
   var espera;
   document.addEventListener('DOMContentLoaded', function () {
     $('buscaOut').addEventListener('input', function () { clearTimeout(espera); espera = setTimeout(aplicar, 150); });
-    selects().forEach(function (s) { s.addEventListener('change', aplicar); });
+    document.querySelectorAll('[data-vista="' + VISTA + '"] [data-visao]').forEach(function (b) {
+      b.addEventListener('click', function () { trocarVisao(b.getAttribute('data-visao')); });
+    });
     $('limparOut').addEventListener('click', function () {
       $('buscaOut').value = '';
-      selects().forEach(function (s) { s.value = ''; });
+      filtros().forEach(FiltroMultiplo.limpar);
       aplicar();
     });
     $('atualizarOut').addEventListener('click', carregar);

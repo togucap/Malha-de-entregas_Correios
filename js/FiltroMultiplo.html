@@ -1,0 +1,157 @@
+<script>
+/*
+ * Filtro em dropdown com seleção múltipla (reutilizável em qualquer tela do painel).
+ *
+ * Estrutura (ver html/VistaAcompanhamento):
+ *   <div data-filtro-multiplo data-rotulo="Parceiro" data-ao-mudar="aplicarFiltrosGlobais">
+ *     <button data-acao="abrir"><span data-titulo>Parceiro (Todos)</span></button>
+ *     <div data-menu hidden>
+ *       <input data-acao="buscar">                     busca interna (o filtro do filtro)
+ *       <button data-acao="todos"> <button data-acao="limpar">
+ *       <ul data-lista> <li><label><input type="checkbox" value="…">…</label><button data-acao="somente">Somente</button></li> </ul>
+ *     </div>
+ *   </div>
+ *
+ * Regras:
+ * - Estado = checkboxes com checked === true. Nenhum marcado = sem filtro ("Todos").
+ * - "Somente": desmarca todos os outros e marca só o da linha.
+ * - Busca interna: esconde (display: none) os <li> cujo texto não contém o termo.
+ * - "Selecionar todos" marca só os itens visíveis; "Limpar" desmarca todos.
+ * - Título: "Rótulo (Todos)" ou "Rótulo (N selec.)".
+ * - Sem botão "Aplicar": toda mudança chama na hora a função global indicada em data-ao-mudar
+ *   (padrão: aplicarFiltrosGlobais). Eventos por delegação no document (funciona com filtros criados depois).
+ */
+(function () {
+  var SELETOR = '[data-filtro-multiplo]';
+
+  function normalizar(s) {
+    return String(s == null ? '' : s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+  }
+
+  function escapar(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function caixas(raiz) { return Array.prototype.slice.call(raiz.querySelectorAll('[data-lista] input[type="checkbox"]')); }
+  function itens(raiz) { return Array.prototype.slice.call(raiz.querySelectorAll('[data-lista] > li')); }
+
+  function selecionados(raiz) {
+    return caixas(raiz).filter(function (c) { return c.checked === true; }).map(function (c) { return c.value; });
+  }
+
+  function atualizarTitulo(raiz) {
+    var n = selecionados(raiz).length;
+    raiz.querySelector('[data-titulo]').textContent =
+      raiz.getAttribute('data-rotulo') + (n ? ' (' + n + ' selec.)' : ' (Todos)');
+    raiz.classList.toggle('filtro-ativo', n > 0);
+  }
+
+  // avisa o dashboard: chama a função global de data-ao-mudar
+  function notificar(raiz) {
+    atualizarTitulo(raiz);
+    var nome = raiz.getAttribute('data-ao-mudar') || 'aplicarFiltrosGlobais';
+    if (typeof window[nome] === 'function') window[nome](raiz);
+  }
+
+  function filtrarLista(raiz) {
+    var termo = normalizar(raiz.querySelector('[data-acao="buscar"]').value);
+    itens(raiz).forEach(function (li) {
+      li.style.display = !termo || li.getAttribute('data-texto').indexOf(termo) >= 0 ? '' : 'none';
+    });
+  }
+
+  function abrir(raiz) {
+    fecharTodos(raiz);
+    raiz.querySelector('[data-menu]').hidden = false;
+    raiz.querySelector('[data-acao="abrir"]').setAttribute('aria-expanded', 'true');
+    raiz.querySelector('[data-acao="buscar"]').focus();
+  }
+
+  function fechar(raiz) {
+    raiz.querySelector('[data-menu]').hidden = true;
+    raiz.querySelector('[data-acao="abrir"]').setAttribute('aria-expanded', 'false');
+  }
+
+  function fecharTodos(exceto) {
+    document.querySelectorAll(SELETOR).forEach(function (r) { if (r !== exceto) fechar(r); });
+  }
+
+  /* ---------- Delegação de eventos ---------- */
+
+  document.addEventListener('click', function (e) {
+    var raiz = e.target.closest(SELETOR);
+    fecharTodos(raiz); // clique fora (ou em outro filtro) fecha os menus abertos
+    if (!raiz) return;
+
+    var alvo = e.target.closest('[data-acao]');
+    var acao = alvo && alvo.getAttribute('data-acao');
+    if (acao === 'abrir') {
+      if (raiz.querySelector('[data-menu]').hidden) abrir(raiz); else fechar(raiz);
+    } else if (acao === 'somente') {
+      var escolhida = alvo.closest('li').querySelector('input[type="checkbox"]');
+      caixas(raiz).forEach(function (c) { c.checked = c === escolhida; });
+      notificar(raiz);
+    } else if (acao === 'todos') {
+      itens(raiz).forEach(function (li) {
+        if (li.style.display !== 'none') li.querySelector('input[type="checkbox"]').checked = true;
+      });
+      notificar(raiz);
+    } else if (acao === 'limpar') {
+      caixas(raiz).forEach(function (c) { c.checked = false; });
+      notificar(raiz);
+    }
+  });
+
+  // marcar/desmarcar um item
+  document.addEventListener('change', function (e) {
+    if (e.target.type !== 'checkbox') return;
+    var raiz = e.target.closest(SELETOR);
+    if (raiz) notificar(raiz);
+  });
+
+  // busca interna em tempo real
+  document.addEventListener('input', function (e) {
+    if (e.target.getAttribute('data-acao') !== 'buscar') return;
+    var raiz = e.target.closest(SELETOR);
+    if (raiz) filtrarLista(raiz);
+  });
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape') return;
+    var raiz = e.target.closest && e.target.closest(SELETOR);
+    if (raiz) { fechar(raiz); raiz.querySelector('[data-acao="abrir"]').focus(); } else fecharTodos(null);
+  });
+
+  /* ---------- API usada pelas telas ---------- */
+
+  window.FiltroMultiplo = {
+    /**
+     * Monta as opções: [{ valor, rotulo, qtd }]. Mantém marcados os valores que continuam existindo
+     * e reaplica a busca interna. Não chama data-ao-mudar.
+     */
+    preencher: function (raiz, opcoes) {
+      var marcados = selecionados(raiz);
+      raiz.querySelector('[data-lista]').innerHTML = opcoes.map(function (o) {
+        var marcado = marcados.indexOf(o.valor) >= 0 ? ' checked' : '';
+        return '<li data-texto="' + escapar(normalizar(o.rotulo)) + '">' +
+          '<label class="filtro-item" title="' + escapar(o.rotulo) + '"><input type="checkbox" value="' + escapar(o.valor) + '"' + marcado + '>' +
+          '<span class="filtro-item-rotulo">' + escapar(o.rotulo) + '</span>' +
+          (o.qtd != null ? '<span class="filtro-item-qtd">' + o.qtd + '</span>' : '') + '</label>' +
+          '<button type="button" class="filtro-somente" data-acao="somente">Somente</button></li>';
+      }).join('') || '<li class="filtro-sem-opcoes" data-texto="">Sem opções</li>';
+      filtrarLista(raiz);
+      atualizarTitulo(raiz);
+    },
+    selecionados: selecionados,
+    // desmarca tudo e limpa a busca interna, sem notificar (para "limpar todos os filtros" da tela)
+    limpar: function (raiz) {
+      caixas(raiz).forEach(function (c) { c.checked = false; });
+      raiz.querySelector('[data-acao="buscar"]').value = '';
+      filtrarLista(raiz);
+      atualizarTitulo(raiz);
+    }
+  };
+})();
+</script>

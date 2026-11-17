@@ -1,0 +1,102 @@
+<style>
+/* Filtro em dropdown com seleção múltipla (js/FiltroMultiplo). Só tokens. */
+
+.filtro-multiplo { position: relative; min-width: 0; }
+
+.filtro-botao {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  height: 40px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-card);
+  color: var(--text-main);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.filtro-botao:hover { background: var(--bg-elevated); }
+.filtro-botao[aria-expanded="true"] { border-color: var(--brand-accent); box-shadow: 0 0 0 3px var(--brand-soft); }
+.filtro-titulo { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.filtro-ativo .filtro-titulo { font-weight: 600; }
+.filtro-ativo .filtro-botao { border-color: var(--brand-accent); }
+.filtro-botao .icone { width: 16px; height: 16px; color: var(--text-support); }
+
+.filtro-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 20;
+  width: max(100%, 340px);
+  max-width: calc(100vw - 32px);
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-pop);
+}
+
+.filtro-menu .input { padding: 8px 10px; }
+
+.filtro-acoes { display: flex; justify-content: space-between; gap: 8px; margin: 8px 2px; }
+
+.filtro-acoes button, .filtro-somente {
+  border: 0;
+  background: transparent;
+  color: var(--brand-accent);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 8px;
+}
+
+.filtro-acoes button:hover, .filtro-somente:hover { background: var(--brand-soft); }
+
+.filtro-lista { list-style: none; margin: 0; padding: 0; max-height: 280px; overflow-y: auto; }
+
+.filtro-lista > li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px;
+  border-radius: 8px;
+}
+
+.filtro-lista > li:hover { background: var(--bg-elevated); }
+
+.filtro-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 32px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.filtro-item input { accent-color: var(--brand-accent); width: 15px; height: 15px; margin: 0; flex: 0 0 auto; }
+.filtro-item-rotulo { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.filtro-item-qtd { font-size: 12px; color: var(--text-support); font-variant-numeric: tabular-nums; }
+
+/* "Somente" só aparece ao passar o mouse (ou com foco do teclado) na linha */
+.filtro-somente { visibility: hidden; flex: 0 0 auto; }
+.filtro-lista > li:hover .filtro-somente,
+.filtro-lista > li:focus-within .filtro-somente { visibility: visible; }
+
+.filtro-sem-opcoes { color: var(--text-support); font-size: 13px; padding: 8px 4px; }
+
+/* telas estreitas: menu com a largura do campo (não passa da borda) */
+@media (max-width: 600px) { .filtro-menu { width: 100%; } }
+
+/* telas de toque: sem hover, "Somente" fica sempre visível */
+@media (hover: none) { .filtro-somente { visibility: visible; } }
+</style>

@@ -12,7 +12,10 @@ const FILTRO_ACOMPANHAMENTO_OUT = 'Parceiro_Nome'; // só linhas com esta coluna
 
 /**
  * Chamada pelo painel (google.script.run). Devolve
- * { colunas, linhas: [[texto, …]], faltando: [colunas não encontradas na aba], totalBase, atualizadoEm }.
+ * { colunas, linhas: [[texto, …]], finalizadas: [bool por linha], faltando: [colunas não encontradas na aba],
+ *   totalBase, atualizadoEm }.
+ * finalizadas usa a mesma regra da atualização de status (statusFinalizado_): false = "Em aberto",
+ * ainda consultado pelas APIs.
  * Valores já em texto: datas "dd/MM/yyyy" (com hora quando houver), números com todos os dígitos.
  */
 function dadosAcompanhamentoOut() {
@@ -24,6 +27,7 @@ function dadosAcompanhamentoOut() {
   const resposta = {
     colunas: COLUNAS_ACOMPANHAMENTO_OUT,
     linhas: [],
+    finalizadas: [],
     faltando: [],
     totalBase: total,
     atualizadoEm: Utilities.formatDate(new Date(), fuso, 'dd/MM/yyyy HH:mm')
@@ -35,11 +39,13 @@ function dadosAcompanhamentoOut() {
   resposta.faltando = COLUNAS_ACOMPANHAMENTO_OUT.filter(function (_, k) { return pos[k] < 0; });
 
   const iFiltro = pos[COLUNAS_ACOMPANHAMENTO_OUT.indexOf(FILTRO_ACOMPANHAMENTO_OUT)];
+  const iStatus = pos[COLUNAS_ACOMPANHAMENTO_OUT.indexOf('Status tracking')];
   if (iFiltro < 0 || !total) return resposta;
 
   aba.getRange(cab + 1, 1, total, largura).getValues().forEach(function (r) {
     if (String(r[iFiltro] == null ? '' : r[iFiltro]).trim() === '') return;
     resposta.linhas.push(pos.map(function (i) { return i < 0 ? '' : valorParaTela_(r[i], fuso); }));
+    resposta.finalizadas.push(iStatus >= 0 && statusFinalizado_(r[iStatus]));
   });
   return resposta;
 }

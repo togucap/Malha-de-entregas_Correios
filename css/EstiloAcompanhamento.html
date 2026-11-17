@@ -3,7 +3,7 @@
 
 .barra-filtros {
   display: grid;
-  grid-template-columns: minmax(240px, 2fr) repeat(3, minmax(150px, 1fr)) auto;
+  grid-template-columns: minmax(240px, 1.4fr) repeat(3, minmax(180px, 1fr)) auto;
   gap: 12px;
   align-items: end;
 }
@@ -13,11 +13,14 @@
 .resumo-tabela {
   display: flex;
   flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 8px;
+  align-items: center;
+  gap: 8px 14px;
   margin: 0 2px 10px;
   font-size: 13px;
 }
+
+.resumo-direita { margin-left: auto; }
+.segmentado .numero { color: var(--text-support); font-weight: 500; margin-left: 2px; }
 
 /* tabela ocupa a altura disponível, com rolagem própria e cabeçalho fixo */
 .tabela-tela { max-height: calc(100vh - 290px); min-height: 220px; }
@@ -28,14 +31,16 @@
 
 .mais-linhas { display: flex; justify-content: center; margin-top: 12px; }
 
-@media (max-width: 1100px) {
-  .barra-filtros { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .campo-busca { grid-column: 1 / -1; }
-  .acoes-filtro { grid-column: 1 / -1; justify-content: flex-end; }
+/* telas médias: pesquisa + botões na 1ª linha, os três filtros na 2ª */
+@media (max-width: 1400px) {
+  .barra-filtros { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-areas: "busca busca acoes"; }
+  .campo-busca { grid-area: busca; }
+  .acoes-filtro { grid-area: acoes; justify-content: flex-end; }
 }
 
 @media (max-width: 600px) {
-  .barra-filtros { grid-template-columns: 1fr; }
+  .barra-filtros { grid-template-columns: 1fr; grid-template-areas: none; }
+  .campo-busca, .acoes-filtro { grid-area: auto; }
   .acoes-filtro .btn { flex: 1; }
   .tabela-tela { max-height: none; }
 }
