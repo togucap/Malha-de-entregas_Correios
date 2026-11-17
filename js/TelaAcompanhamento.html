@@ -1,0 +1,184 @@
+<script>
+/*
+ * Tela "Acompanhamento - OUT": carrega dadosAcompanhamentoOut() na primeira vez que a tela é aberta
+ * e faz pesquisa e filtros no navegador. Mostra 500 linhas por vez ("Mostrar mais").
+ */
+(function () {
+  var VISTA = 'acompanhamento-out';
+  var POR_PAGINA = 500;
+  // colunas pesquisadas pelo campo de busca
+  var BUSCA = ['Pedido', 'Autorização Postagem', 'Código convertido', 'Parceiro_Nome', 'Pedido_Parceiro'];
+  // códigos e identificadores em fonte mono
+  var MONO = ['Protocolo', 'Pedido', 'Autorização Postagem', 'Código convertido', 'Pedido_Parceiro'];
+  var VAZIO = '__vazio__';
+
+  var estado = { carregado: false, colunas: [], linhas: [], filtradas: [], limite: POR_PAGINA };
+
+  function $(id) { return document.getElementById(id); }
+
+  function normalizar(s) {
+    return String(s == null ? '' : s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+  }
+
+  function escapar(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function indice(coluna) { return estado.colunas.indexOf(coluna); }
+
+  /* ---------- Carregamento ---------- */
+
+  function carregar() {
+    estado.carregado = true;
+    $('avisoOut').hidden = true;
+    $('infoOut').textContent = 'Carregando…';
+    $('atualizarOut').disabled = true;
+    if (!window.google || !google.script || !google.script.run) {
+      falhar({ message: 'Abra o painel pelo Apps Script (menu Correios › Abrir painel ou App da Web).' });
+      return;
+    }
+    google.script.run.withSuccessHandler(receber).withFailureHandler(falhar).dadosAcompanhamentoOut();
+  }
+
+  function receber(d) {
+    $('atualizarOut').disabled = false;
+    estado.colunas = d.colunas;
+    var busca = BUSCA.map(indice);
+    estado.linhas = d.linhas.map(function (v) {
+      return { v: v, busca: normalizar(busca.map(function (i) { return v[i]; }).join(' ')) };
+    });
+    $('atualizadoOut').textContent = 'Base lida em ' + d.atualizadoEm;
+    if (d.faltando && d.faltando.length) {
+      avisar('Colunas não encontradas na base: ' + d.faltando.join(', ') + '. Elas aparecem vazias.');
+    }
+    montarCabecalho();
+    montarFiltros();
+    aplicar();
+  }
+
+  function falhar(e) {
+    $('atualizarOut').disabled = false;
+    $('infoOut').textContent = '';
+    avisar('Não foi possível ler a base: ' + (e && e.message ? e.message : e));
+  }
+
+  function avisar(texto) {
+    var aviso = $('avisoOut');
+    aviso.textContent = texto;
+    aviso.hidden = false;
+  }
+
+  /* ---------- Filtros ---------- */
+
+  function selects() { return Array.prototype.slice.call(document.querySelectorAll('.barra-filtros select[data-coluna]')); }
+
+  // opções de cada filtro: valores distintos da base, com a quantidade
+  function montarFiltros() {
+    selects().forEach(function (sel) {
+      var i = indice(sel.getAttribute('data-coluna'));
+      var contagem = {};
+      estado.linhas.forEach(function (l) {
+        var v = i < 0 ? '' : l.v[i];
+        var chave = v === '' ? VAZIO : v;
+        contagem[chave] = (contagem[chave] || 0) + 1;
+      });
+      var atual = sel.value;
+      var valores = Object.keys(contagem).sort(function (a, b) {
+        if (a === VAZIO) return 1;
+        if (b === VAZIO) return -1;
+        return a.localeCompare(b, 'pt-BR');
+      });
+      sel.innerHTML = '<option value="">Todos</option>' + valores.map(function (v) {
+        var rotulo = v === VAZIO ? '(vazio)' : v;
+        return '<option value="' + escapar(v) + '">' + escapar(rotulo) + ' (' + contagem[v] + ')</option>';
+      }).join('');
+      sel.value = contagem[atual] ? atual : '';
+    });
+  }
+
+  function aplicar() {
+    var termo = normalizar($('buscaOut').value);
+    var filtros = selects().filter(function (s) { return s.value; }).map(function (s) {
+      return { i: indice(s.getAttribute('data-coluna')), valor: s.value === VAZIO ? '' : s.value };
+    });
+    estado.filtradas = estado.linhas.filter(function (l) {
+      if (termo && l.busca.indexOf(termo) < 0) return false;
+      for (var k = 0; k < filtros.length; k++) {
+        if ((filtros[k].i < 0 ? '' : l.v[filtros[k].i]) !== filtros[k].valor) return false;
+      }
+      return true;
+    });
+    estado.limite = POR_PAGINA;
+    desenharLinhas();
+  }
+
+  /* ---------- Tabela ---------- */
+
+  function montarCabecalho() {
+    $('tabelaOut').tHead.innerHTML = '<tr>' + estado.colunas.map(function (c) {
+      return '<th scope="col">' + escapar(c) + '</th>';
+    }).join('') + '</tr>';
+  }
+
+  // cor do chip pelo significado do status (padrão visual)
+  function classeStatus(s) {
+    var t = normalizar(s);
+    if (!t) return 'chip-neutro';
+    if (t.indexOf('erro') === 0) return 'chip-erro';
+    if (t.indexOf('rastreio expirado') >= 0) return 'chip-neutro';
+    if (t.indexOf('nao entregue') >= 0 || /cancelad|expirad|desistencia/.test(t)) return 'chip-erro';
+    if (t.indexOf('entregue') >= 0) return 'chip-sucesso';
+    if (/aguardando/.test(t)) return 'chip-neutro';
+    return 'chip-marca'; // em andamento (em transferência, saiu para entrega, postado, coletado…)
+  }
+
+  function celula(coluna, valor) {
+    if (coluna === 'Status tracking') {
+      return '<td>' + (valor ? '<span class="chip ' + classeStatus(valor) + '">' + escapar(valor) + '</span>' : '') + '</td>';
+    }
+    if (coluna === 'Entrada_Lista' && valor) {
+      return '<td><span class="chip ' + (normalizar(valor) === 'sim' ? 'chip-sucesso' : 'chip-neutro') + '">' + escapar(valor) + '</span></td>';
+    }
+    var classe = MONO.indexOf(coluna) >= 0 ? ' class="mono"' : /^Dt\.|^Data/.test(coluna) ? ' class="numero"' : '';
+    return '<td' + classe + '>' + escapar(valor) + '</td>';
+  }
+
+  function desenharLinhas() {
+    var visiveis = estado.filtradas.slice(0, estado.limite);
+    $('tabelaOut').tBodies[0].innerHTML = visiveis.map(function (l) {
+      return '<tr>' + estado.colunas.map(function (c, i) { return celula(c, l.v[i]); }).join('') + '</tr>';
+    }).join('');
+
+    var total = estado.linhas.length, achadas = estado.filtradas.length;
+    $('vazioOut').hidden = achadas > 0;
+    $('tabelaOut').hidden = achadas === 0;
+    $('infoOut').textContent = (achadas === total
+      ? total.toLocaleString('pt-BR') + ' protocolo(s) com parceiro'
+      : achadas.toLocaleString('pt-BR') + ' de ' + total.toLocaleString('pt-BR') + ' protocolo(s)') +
+      (achadas > visiveis.length ? ' · mostrando ' + visiveis.length.toLocaleString('pt-BR') : '');
+    $('maisOut').hidden = achadas <= visiveis.length;
+  }
+
+  /* ---------- Eventos ---------- */
+
+  var espera;
+  document.addEventListener('DOMContentLoaded', function () {
+    $('buscaOut').addEventListener('input', function () { clearTimeout(espera); espera = setTimeout(aplicar, 150); });
+    selects().forEach(function (s) { s.addEventListener('change', aplicar); });
+    $('limparOut').addEventListener('click', function () {
+      $('buscaOut').value = '';
+      selects().forEach(function (s) { s.value = ''; });
+      aplicar();
+    });
+    $('atualizarOut').addEventListener('click', carregar);
+    $('maisOut').addEventListener('click', function () { estado.limite += POR_PAGINA; desenharLinhas(); });
+  });
+
+  // carrega na primeira vez que a tela é aberta (evento disparado por js/Navegacao)
+  document.addEventListener('vistamostrada', function (e) {
+    if (e.detail === VISTA && !estado.carregado) carregar();
+  });
+})();
+</script>

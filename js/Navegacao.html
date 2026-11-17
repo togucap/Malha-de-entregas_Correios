@@ -2,6 +2,7 @@
 /*
  * Navegação entre as vistas do painel: cada botão .nav-item[data-vista] mostra a <section data-vista>
  * correspondente e atualiza o título do cabeçalho. A vista atual fica no endereço (#vista).
+ * Ao mostrar uma vista, dispara o evento "vistamostrada" (detail = nome da vista).
  */
 (function () {
   function mostrarVista(nome) {
@@ -22,6 +23,8 @@
     document.getElementById('tituloPagina').textContent = alvo.getAttribute('data-titulo') || alvo.textContent.trim();
     document.getElementById('subtituloPagina').textContent = alvo.getAttribute('data-subtitulo') || '';
     try { history.replaceState(null, '', '#' + nome); } catch (e) { /* janela do Apps Script pode não permitir */ }
+    // cada tela carrega seus dados quando é aberta (ex.: js/TelaAcompanhamento)
+    document.dispatchEvent(new CustomEvent('vistamostrada', { detail: nome }));
   }
 
   document.addEventListener('DOMContentLoaded', function () {

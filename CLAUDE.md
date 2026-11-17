@@ -24,7 +24,9 @@ Pastas no GitHub: `gs/` (servidor), `html/` (páginas), `css/` e `js/` (estilos 
 - `Intelipost.gs` — consulta Jadlog via Web App proxy corporativo da Intelipost: lote (uma chamada por lote), consulta crua da tela de teste e amostra de protocolos da base.
 - `IntelipostParser.gs` — interpreta `{ sucesso, dados }` do proxy: eventos do `detalhes.historico` por pedido, último evento, cidade; `statusIntelipost_`.
 - `gs/Interface.gs` — páginas HtmlService: `doGet` (App da Web: painel; `?pagina=teste` = tela de teste), `abrirPainel` / `abrirTeste` (menu Correios), `include(nome)` para os modelos.
+- `gs/Acompanhamento.gs` — `dadosAcompanhamentoOut()` para a tela "Acompanhamento - OUT": linhas da aba base com `Parceiro_Nome` preenchido, 12 colunas, valores já em texto (datas `dd/MM/yyyy[ HH:mm]`, números com todos os dígitos).
 - `html/Index.html` — tela de teste das APIs (resposta crua).
+- `html/VistaAcompanhamento.html` + `css/EstiloAcompanhamento.html` + `js/TelaAcompanhamento.html` — tela "Acompanhamento - OUT" (estrutura, estilo, lógica).
 - `html/Painel.html` — painel (interface principal), modelo que inclui `Tokens`, `Base`, `Componentes`, `Tema` e `Navegacao`; por enquanto só a estrutura (barra lateral, cabeçalho, vistas vazias).
 - `css/Tokens.html` — tokens de cor dos temas escuro (padrão) e claro. `css/Base.html` — tipografia, layout, scrollbar, responsivo. `css/Componentes.html` — cartões, KPI, botões, campos, chips, tabelas, resultado, avisos, progresso, segmentado, modal, estado vazio.
 - `js/Tema.html` — troca de tema (`data-theme` no `<html>`, escolha no localStorage). `js/Navegacao.html` — troca de vistas pela barra lateral (`data-vista`), título do cabeçalho e `#vista` no endereço.
@@ -35,7 +37,13 @@ Pastas no GitHub: `gs/` (servidor), `html/` (páginas), `css/` e `js/` (estilos 
 - CSS dos componentes usa **só** `var(--…)` de `css/Tokens` (nenhuma cor fixa). Raios: 8 controles, 9 segmentado, 12 cartões, 999 pílulas. Sem sombra em cartões (só `--shadow-pop` em modais/menus); sem gradientes.
 - Cores semânticas: laranja = ação principal/ativo/foco/progresso (nunca erro); verde = sucesso; vermelho = erro/bloqueio (`.btn-perigo` só para destrutivo); violeta = fora do padrão; azul = informação; neutro = pendente/sem dados. Indicador com 0 fica neutro. Estado na tabela por chip ou barra de 4 px, nunca pintando a linha.
 - Responsivo: ≤ 900 px a barra lateral vira só ícones; funciona a 360 px sem rolagem horizontal.
-- Vistas: Visão geral, Protocolos, Rastreio, Cruzamentos, Configurações (todas vazias por enquanto). Nova tela = conteúdo na `<section class="vista" data-vista="…">` correspondente.
+- Vistas: Visão geral, **Acompanhamento - OUT**, Protocolos, Rastreio, Cruzamentos, Configurações (as demais vazias por enquanto). Tela nova = arquivo `html/Vista<Nome>` com a `<section class="vista" data-vista="…">` (incluído no Painel), `css/Estilo<Nome>` e `js/Tela<Nome>`; a navegação dispara o evento `vistamostrada` (detail = vista) para a tela carregar seus dados na primeira abertura.
+- `[hidden]` esconde sempre (`display: none !important` no Base), inclusive componentes com `display` próprio.
+
+### Tela "Acompanhamento - OUT"
+- Dados: `dadosAcompanhamentoOut()` lê a aba base inteira uma vez; só linhas com `Parceiro_Nome`. Colunas: Protocolo, Pedido, Dt. autorização, Dt. postagem, Autorização Postagem, Código convertido, Status tracking, Data Ocorrencia, cidade ultima interação, Parceiro_Nome, Entrada_Lista, Pedido_Parceiro. Colunas ausentes na base vêm vazias e são avisadas.
+- Pesquisa (no navegador, sem acento/maiúsculas, parte do texto): Pedido, Autorização Postagem, Código convertido, Parceiro_Nome, Pedido_Parceiro. Filtros (valores distintos com contagem, inclui "(vazio)"): Status tracking, Parceiro_Nome, Entrada_Lista. Botões Limpar e Atualizar (relê a base).
+- Tabela: 500 linhas por vez ("Mostrar mais"), cabeçalho fixo, códigos em Plex Mono. Status em chip: entregue = verde; não entregue/cancelado/expirado/desistência/erro = vermelho; rastreio expirado/aguardando/vazio = neutro; demais (em andamento) = laranja. Entrada_Lista: Sim = verde, Não = neutro.
 
 ## Configuração
 

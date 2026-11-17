@@ -10,6 +10,7 @@
   <?!= include('Tokens'); ?>
   <?!= include('Base'); ?>
   <?!= include('Componentes'); ?>
+  <?!= include('EstiloAcompanhamento'); ?>
   <?!= include('Tema'); ?>
 </head>
 <body>
@@ -29,6 +30,10 @@
       <button class="nav-item" data-vista="visao-geral" data-titulo="Visão geral" data-subtitulo="Resumo da malha de entregas">
         <svg class="icone" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
         <span class="nav-texto">Visão geral</span>
+      </button>
+      <button class="nav-item" data-vista="acompanhamento-out" data-titulo="Acompanhamento - OUT" data-subtitulo="Protocolos de parceiros externos (com Parceiro_Nome)">
+        <svg class="icone" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5h11M9 12h11M9 19h11"/><path d="m3 5 1 1 2-2M3 12l1 1 2-2M3 19l1 1 2-2"/></svg>
+        <span class="nav-texto">Acompanhamento - OUT</span>
       </button>
       <button class="nav-item" data-vista="protocolos" data-titulo="Protocolos" data-subtitulo="Base de protocolos e autorizações">
         <svg class="icone" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 8 12 3 3 8v8l9 5 9-5V8z"/><path d="m3 8 9 5 9-5"/><path d="M12 13v8"/></svg>
@@ -75,6 +80,8 @@
       </div>
     </section>
 
+    <?!= include('VistaAcompanhamento'); ?>
+
     <section class="vista" data-vista="protocolos" hidden>
       <div class="card-container vazio">
         <div class="vazio-icone"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 8 12 3 3 8v8l9 5 9-5V8z"/><path d="m3 8 9 5 9-5"/></svg></div>
@@ -108,6 +115,7 @@
     </section>
   </main>
 
+  <?!= include('TelaAcompanhamento'); ?>
   <?!= include('Navegacao'); ?>
 </body>
 </html>

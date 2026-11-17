@@ -8,6 +8,9 @@
 
 html, body { margin: 0; padding: 0; }
 
+/* hidden sempre esconde, mesmo em componentes com display próprio (flex, grid…) */
+[hidden] { display: none !important; }
+
 body {
   display: flex;
   height: 100vh;

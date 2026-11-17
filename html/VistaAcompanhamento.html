@@ -1,0 +1,53 @@
+<!-- Tela "Acompanhamento - OUT": protocolos com parceiro (Parceiro_Nome preenchido). Lógica em js/TelaAcompanhamento. -->
+<section class="vista" data-vista="acompanhamento-out" hidden>
+
+  <div class="card-container barra-filtros">
+    <div class="campo campo-busca">
+      <label class="campo-rotulo" for="buscaOut">Pesquisar</label>
+      <input class="input" id="buscaOut" type="search" autocomplete="off" spellcheck="false"
+             placeholder="Pedido, autorização, código convertido, parceiro ou pedido do parceiro">
+    </div>
+    <div class="campo">
+      <label class="campo-rotulo" for="filtroStatusOut">Status tracking</label>
+      <select class="select" id="filtroStatusOut" data-coluna="Status tracking"><option value="">Todos</option></select>
+    </div>
+    <div class="campo">
+      <label class="campo-rotulo" for="filtroParceiroOut">Parceiro</label>
+      <select class="select" id="filtroParceiroOut" data-coluna="Parceiro_Nome"><option value="">Todos</option></select>
+    </div>
+    <div class="campo">
+      <label class="campo-rotulo" for="filtroEntradaOut">Entrada na lista</label>
+      <select class="select" id="filtroEntradaOut" data-coluna="Entrada_Lista"><option value="">Todos</option></select>
+    </div>
+    <div class="acoes-filtro">
+      <button class="btn btn-fantasma" id="limparOut" type="button">Limpar</button>
+      <button class="btn btn-secundario" id="atualizarOut" type="button" title="Ler a base de novo">
+        <svg class="icone" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></svg>
+        <span>Atualizar</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="aviso aviso-perigo" id="avisoOut" role="alert" hidden></div>
+
+  <div class="resumo-tabela">
+    <span id="infoOut" class="texto-apoio">Carregando…</span>
+    <span id="atualizadoOut" class="texto-apoio"></span>
+  </div>
+
+  <div class="tabela-caixa tabela-tela">
+    <table class="tabela" id="tabelaOut">
+      <thead></thead>
+      <tbody></tbody>
+    </table>
+    <div class="vazio" id="vazioOut" hidden>
+      <div class="vazio-icone"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></div>
+      <div class="vazio-titulo">Nenhum protocolo encontrado</div>
+      <div class="vazio-texto">Ajuste a pesquisa ou os filtros.</div>
+    </div>
+  </div>
+
+  <div class="mais-linhas">
+    <button class="btn btn-secundario" id="maisOut" type="button" hidden>Mostrar mais</button>
+  </div>
+</section>
