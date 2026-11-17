@@ -1,0 +1,34 @@
+<script>
+/*
+ * Navegação entre as vistas do painel: cada botão .nav-item[data-vista] mostra a <section data-vista>
+ * correspondente e atualiza o título do cabeçalho. A vista atual fica no endereço (#vista).
+ */
+(function () {
+  function mostrarVista(nome) {
+    var botoes = document.querySelectorAll('.nav-item[data-vista]');
+    var alvo = document.querySelector('.nav-item[data-vista="' + nome + '"]') || botoes[0];
+    if (!alvo) return;
+    nome = alvo.getAttribute('data-vista');
+
+    botoes.forEach(function (b) {
+      var ativo = b === alvo;
+      b.classList.toggle('ativo', ativo);
+      if (ativo) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+    });
+    document.querySelectorAll('.vista').forEach(function (v) {
+      v.hidden = v.getAttribute('data-vista') !== nome;
+    });
+
+    document.getElementById('tituloPagina').textContent = alvo.getAttribute('data-titulo') || alvo.textContent.trim();
+    document.getElementById('subtituloPagina').textContent = alvo.getAttribute('data-subtitulo') || '';
+    try { history.replaceState(null, '', '#' + nome); } catch (e) { /* janela do Apps Script pode não permitir */ }
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('.nav-item[data-vista]').forEach(function (b) {
+      b.addEventListener('click', function () { mostrarVista(b.getAttribute('data-vista')); });
+    });
+    mostrarVista((location.hash || '').replace('#', ''));
+  });
+})();
+</script>

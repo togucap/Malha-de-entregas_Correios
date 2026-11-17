@@ -1,0 +1,37 @@
+<script>
+/*
+ * Tema claro/escuro: atributo data-theme no <html> (escuro é o padrão).
+ * A escolha fica no navegador de quem usa (localStorage); sem ele, volta ao escuro.
+ * Incluído no <head> para aplicar o tema antes de desenhar a página.
+ */
+(function () {
+  var CHAVE = 'malha-tema';
+
+  function lerTema() {
+    try { return localStorage.getItem(CHAVE) === 'light' ? 'light' : 'dark'; } catch (e) { return 'dark'; }
+  }
+
+  function aplicarTema(tema) {
+    document.documentElement.setAttribute('data-theme', tema);
+    var botao = document.getElementById('botaoTema');
+    if (botao) {
+      var claro = tema === 'light';
+      botao.setAttribute('aria-label', claro ? 'Usar tema escuro' : 'Usar tema claro');
+      botao.setAttribute('title', claro ? 'Tema escuro' : 'Tema claro');
+      // escuro mostra o sol (ir para o claro); claro mostra a lua.
+      // toggleAttribute: em <svg> a propriedade .hidden não altera o atributo
+      document.getElementById('iconeSol').toggleAttribute('hidden', claro);
+      document.getElementById('iconeLua').toggleAttribute('hidden', !claro);
+    }
+  }
+
+  window.alternarTema = function () {
+    var novo = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+    try { localStorage.setItem(CHAVE, novo); } catch (e) { /* sem armazenamento: vale só nesta visita */ }
+    aplicarTema(novo);
+  };
+
+  aplicarTema(lerTema());
+  document.addEventListener('DOMContentLoaded', function () { aplicarTema(lerTema()); });
+})();
+</script>

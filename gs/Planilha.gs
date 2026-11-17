@@ -24,6 +24,7 @@ function onOpen() {
     .addItem('Importar protocolos do Drive', 'menuImportarProtocolos')
     .addItem('Cruzar com relatórios do Drive', 'menuCruzarRelatorios')
     .addSeparator()
+    .addItem('Abrir painel', 'abrirPainel')
     .addItem('Tela de teste das APIs', 'abrirTeste')
     .addToUi();
 }

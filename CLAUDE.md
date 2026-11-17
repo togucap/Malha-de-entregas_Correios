@@ -4,7 +4,7 @@ Projeto em **Google Apps Script (GAS)** para consultar autorizações de postage
 
 ## Arquivos
 
-Os nomes no GitHub são os mesmos do editor do GAS (ex.: `Planilha.gs` ↔ arquivo `Planilha`). Todos os `.gs` compartilham o escopo global; não usar, no nível superior de um arquivo, constantes de outro arquivo (a ordem de carga não é garantida).
+Pastas no GitHub: `gs/` (servidor), `html/` (páginas), `css/` e `js/` (estilos e scripts do painel). O GAS não tem pastas e só aceita arquivos de script e HTML: **o nome no GAS é o nome do arquivo sem a pasta e sem a extensão** (`gs/Planilha.gs` ↔ script `Planilha`; `css/Tokens.html` ↔ HTML `Tokens`). Por isso CSS e JS ficam em `.html` com `<style>`/`<script>` e entram no painel por `<?!= include('Nome'); ?>`. Nomes não podem se repetir entre pastas. Todos os `.gs` compartilham o escopo global; não usar, no nível superior de um arquivo, constantes de outro arquivo (a ordem de carga não é garantida).
 
 - `Config.gs` — `CONFIG` (endpoints, nomes de colunas, lote/tempo), hosts permitidos e leitura das credenciais nas Propriedades do script.
 - `Http.gs` — `buscarTodos_`: `fetchAll` em grupos de `CONFIG.HTTP.SIMULTANEAS` com novas tentativas para 429/502/503/504 (usado por Reversa e Rastro em lote).
@@ -23,7 +23,19 @@ Os nomes no GitHub são os mesmos do editor do GAS (ex.: `Planilha.gs` ↔ arqui
 - `Cruzamentos.gs` — lista `CRUZAMENTOS` (id, pasta, arquivo, chave da base, chave do relatório, chave composta com rastreio, exclusão de linhas de outro cruzamento, colunas trazidas ou de presença Sim/Não) e o botão de menu "Cruzar com relatórios do Drive", que executa todos na ordem da lista.
 - `Intelipost.gs` — consulta Jadlog via Web App proxy corporativo da Intelipost: lote (uma chamada por lote), consulta crua da tela de teste e amostra de protocolos da base.
 - `IntelipostParser.gs` — interpreta `{ sucesso, dados }` do proxy: eventos do `detalhes.historico` por pedido, último evento, cidade; `statusIntelipost_`.
-- `Interface.gs` + `Index.html` — interface de teste (HtmlService) com a resposta crua das APIs; App da Web (`doGet`) ou janela na planilha (`abrirTeste`).
+- `gs/Interface.gs` — páginas HtmlService: `doGet` (App da Web: painel; `?pagina=teste` = tela de teste), `abrirPainel` / `abrirTeste` (menu Correios), `include(nome)` para os modelos.
+- `html/Index.html` — tela de teste das APIs (resposta crua).
+- `html/Painel.html` — painel (interface principal), modelo que inclui `Tokens`, `Base`, `Componentes`, `Tema` e `Navegacao`; por enquanto só a estrutura (barra lateral, cabeçalho, vistas vazias).
+- `css/Tokens.html` — tokens de cor dos temas escuro (padrão) e claro. `css/Base.html` — tipografia, layout, scrollbar, responsivo. `css/Componentes.html` — cartões, KPI, botões, campos, chips, tabelas, resultado, avisos, progresso, segmentado, modal, estado vazio.
+- `js/Tema.html` — troca de tema (`data-theme` no `<html>`, escolha no localStorage). `js/Navegacao.html` — troca de vistas pela barra lateral (`data-vista`), título do cabeçalho e `#vista` no endereço.
+
+## Padrão visual (painel)
+
+- Padrão "Controle de Insucessos": painel sóbrio estilo GitHub, laranja como marca, **tema escuro padrão** + tema claro (`data-theme`). Fontes IBM Plex Sans (texto) e IBM Plex Mono 600 (códigos/identificadores).
+- CSS dos componentes usa **só** `var(--…)` de `css/Tokens` (nenhuma cor fixa). Raios: 8 controles, 9 segmentado, 12 cartões, 999 pílulas. Sem sombra em cartões (só `--shadow-pop` em modais/menus); sem gradientes.
+- Cores semânticas: laranja = ação principal/ativo/foco/progresso (nunca erro); verde = sucesso; vermelho = erro/bloqueio (`.btn-perigo` só para destrutivo); violeta = fora do padrão; azul = informação; neutro = pendente/sem dados. Indicador com 0 fica neutro. Estado na tabela por chip ou barra de 4 px, nunca pintando a linha.
+- Responsivo: ≤ 900 px a barra lateral vira só ícones; funciona a 360 px sem rolagem horizontal.
+- Vistas: Visão geral, Protocolos, Rastreio, Cruzamentos, Configurações (todas vazias por enquanto). Nova tela = conteúdo na `<section class="vista" data-vista="…">` correspondente.
 
 ## Configuração
 

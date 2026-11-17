@@ -1,0 +1,357 @@
+<style>
+/*
+ * Componentes do padrão visual. Só tokens (var(--…)); raios: 8 controles, 9 segmentado,
+ * 12 cartões, 999 pílulas. Sem sombra em cartões (só em modais/menus).
+ * Cores semânticas: laranja = ação/marca/ativo/progresso; verde = sucesso; vermelho = erro/bloqueio;
+ * violeta = fora do padrão; azul = informação; neutro = pendente/sem dados.
+ */
+
+/* ---------- Cartão ---------- */
+
+.card-container {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 16px;
+}
+
+.card-titulo { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+.card-legenda { font-size: 13px; color: var(--text-support); }
+
+/* ---------- Estado vazio ---------- */
+
+.vazio {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 10px;
+  padding: 48px 20px;
+}
+
+.vazio-icone {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--neutral-soft);
+  color: var(--text-support);
+}
+
+.vazio-titulo { font-size: 15px; font-weight: 600; }
+.vazio-texto { font-size: 13px; color: var(--text-support); max-width: 420px; }
+
+/* ---------- Faixa de indicadores (KPI) ---------- */
+
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  padding: 0;
+  overflow: hidden;
+}
+
+.kpi { padding: 16px 20px; border-left: 1px solid var(--border-color); }
+.kpi:first-child { border-left: 0; }
+.kpi-titulo { font-size: 13px; font-weight: 500; color: var(--text-support); }
+.kpi-valor { font-size: 28px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.2; margin: 4px 0 2px; }
+.kpi-legenda { font-size: 12px; color: var(--text-support); }
+.kpi-valor.bloqueio { color: var(--red-alert); }
+.kpi-valor.divergencia { color: var(--violet); }
+.kpi-valor.sucesso { color: var(--emerald); }
+.kpi-acoes { display: flex; flex-direction: column; gap: 8px; justify-content: center; }
+
+/* ---------- Botões ---------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 16px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+
+.btn-brand { background: var(--brand-accent); border-color: var(--brand-accent); color: var(--on-brand); font-weight: 700; }
+.btn-brand:hover { background: var(--brand-hover); border-color: var(--brand-hover); }
+
+.btn-secundario { background: var(--bg-card); border-color: var(--border-strong); color: var(--text-main); }
+.btn-secundario:hover { background: var(--bg-elevated); }
+
+.btn-fantasma { background: transparent; border-color: var(--border-color); color: var(--text-main); }
+.btn-fantasma:hover { background: var(--bg-elevated); }
+
+.btn-perigo { background: var(--red-action); border-color: var(--red-action); color: var(--on-red); }
+
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.btn-icone { width: 40px; padding: 0; }
+
+/* ---------- Campos ---------- */
+
+.campo { display: flex; flex-direction: column; gap: 6px; }
+.campo-rotulo { font-size: 12px; font-weight: 600; color: var(--text-support); }
+
+.input, .select, .textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-card);
+  color: var(--text-main);
+  font: inherit;
+  font-size: 14px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.input:focus, .select:focus, .textarea:focus {
+  outline: none;
+  border-color: var(--brand-accent);
+  box-shadow: 0 0 0 3px var(--brand-soft);
+}
+
+.input.mono { font-family: 'IBM Plex Mono', monospace; }
+
+/* select sem aparência nativa; seta desenhada com os tokens */
+.select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 34px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--text-support) 50%),
+    linear-gradient(135deg, var(--text-support) 50%, transparent 50%);
+  background-position: calc(100% - 18px) 50%, calc(100% - 13px) 50%;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+
+/* ---------- Chips e badges ---------- */
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.chip-marca { color: var(--brand-accent); background: var(--brand-soft); }
+.chip-sucesso { color: var(--emerald); background: var(--emerald-soft); }
+.chip-erro { color: var(--red-alert); background: var(--red-soft); }
+.chip-divergencia { color: var(--violet); background: var(--violet-soft); }
+.chip-info { color: var(--blue); background: var(--blue-soft); }
+.chip-neutro { color: var(--text-support); background: var(--neutral-soft); }
+
+.chip-filtro {
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--text-main);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.chip-filtro.ativo { background: var(--text-main); border-color: var(--text-main); color: var(--bg-global); }
+
+.contador { padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+
+/* ---------- Tabelas ---------- */
+
+.tabela-caixa {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  overflow: auto;
+  max-height: 520px;
+}
+
+.tabela { width: 100%; border-collapse: collapse; font-size: 14px; }
+
+.tabela th, .tabela td {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border-color);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.tabela th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg-subtle);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-support);
+}
+
+.tabela tbody tr:hover { background: var(--table-hover); }
+.tabela tr.concluida td { color: var(--text-support); }
+
+/* ---------- Cartão de resultado ---------- */
+
+.resultado {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 22px 24px;
+  border-radius: 12px;
+  border: 1px solid;
+  animation: entrar 0.18s ease-out;
+}
+
+.resultado-icone {
+  flex: 0 0 46px;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.resultado-titulo { font-size: 22px; font-weight: 700; }
+.resultado-id { font-family: 'IBM Plex Mono', monospace; font-weight: 600; font-size: 32px; }
+
+.resultado.ok { background: var(--ok-bg); border-color: var(--ok-border); }
+.resultado.ok .resultado-titulo { color: var(--ok-text); }
+.resultado.ok .resultado-sub { color: var(--ok-sub); }
+.resultado.ok .resultado-icone { background: var(--ok-text); color: var(--ok-bg); }
+
+.resultado.stop { background: var(--stop-bg); border-color: var(--stop-border); }
+.resultado.stop .resultado-titulo { color: var(--stop-text); font-size: 26px; }
+.resultado.stop .resultado-sub { color: var(--stop-sub); }
+.resultado.stop .resultado-icone { background: var(--stop-text); color: var(--stop-bg); }
+
+.resultado.div { background: var(--div-bg); border-color: var(--div-border); }
+.resultado.div .resultado-titulo { color: var(--div-text); }
+.resultado.div .resultado-sub { color: var(--div-sub); }
+.resultado.div .resultado-icone { background: var(--div-text); color: var(--div-bg); }
+
+.resultado.rep { background: var(--rep-bg); border-color: var(--rep-border); }
+.resultado.rep .resultado-titulo { color: var(--rep-text); }
+.resultado.rep .resultado-sub { color: var(--rep-sub); }
+.resultado.rep .resultado-icone { background: var(--rep-text); color: var(--rep-bg); }
+
+@keyframes entrar {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* ---------- Avisos em linha ---------- */
+
+.aviso {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px solid;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.aviso-perigo { background: var(--red-soft); border-color: var(--stop-border); color: var(--stop-text); }
+.aviso-info { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); }
+
+/* ---------- Item de lista com estado (barra de 4 px à esquerda) ---------- */
+
+.item-estado { border-left: 4px solid var(--text-support); background: var(--neutral-soft); border-radius: 8px; padding: 10px 14px; }
+.item-estado.erro { border-left-color: var(--red-alert); background: var(--red-soft); }
+.item-estado.sucesso { border-left-color: var(--emerald); background: var(--emerald-soft); }
+
+/* ---------- Progresso ---------- */
+
+.progresso { height: 6px; border-radius: 3px; background: var(--bg-elevated); overflow: hidden; }
+.progresso-barra { height: 100%; width: 0; border-radius: 3px; background: var(--brand-accent); transition: width 0.4s; }
+.progresso-barra.concluido { background: var(--emerald); }
+
+/* ---------- Controle segmentado ---------- */
+
+.segmentado {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 9px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+}
+
+.segmentado button {
+  height: 30px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-support);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.segmentado button.ativo {
+  background: var(--bg-elevated);
+  color: var(--text-main);
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+
+/* ---------- Modal ---------- */
+
+.modal-fundo {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: var(--overlay);
+  backdrop-filter: blur(3px);
+}
+
+.modal-fundo[hidden] { display: none; }
+
+.modal {
+  position: relative;
+  width: 100%;
+  max-width: 440px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: var(--shadow-pop);
+}
+
+.modal-fechar { position: absolute; top: 12px; right: 12px; }
+.modal-acoes { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+
+/* ---------- Grelhas utilitárias ---------- */
+
+.grade { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+
+@media (max-width: 600px) {
+  .kpi { border-left: 0; border-top: 1px solid var(--border-color); }
+  .kpi:first-child { border-top: 0; }
+  .grade { grid-template-columns: 1fr; }
+}
+</style>
