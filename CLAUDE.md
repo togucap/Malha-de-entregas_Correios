@@ -53,7 +53,7 @@ Propriedades do script (Configurações do projeto > Propriedades do script): `C
 - `ignorarLinhasDe: '<id>'`: as linhas que tiveram correspondência no cruzamento indicado (executado antes, na mesma rodada) não são cruzadas; coluna de presença fica vazia. Se o cruzamento de que depende falhar, este não é executado.
 - Um cruzamento com erro (arquivo/coluna não encontrada) não impede os demais; o toast lista o resultado de cada um.
 - Atuais (todos com `Base_Dados.Pedido`):
-  - `Consolidado_Parceiros_Out.xlsx` (pasta `1Zk2F78…`) `pedido_codigo` → `Parceiro` em `Parceiro_Nome` e `parceiro_pedido` em `Pedido_Parceiro` (como texto, `texto: true`) (cada coluna pega o primeiro valor preenchido do pedido, de forma independente). O sufixo `_Out` indica parceiros externos (não é mês); o nome do arquivo é fixo.
+  - `Consolidado_Anymarket_OUT` (antes `Consolidado_Parceiros_Out.xlsx`; pasta `1Zk2F78…`) `pedido_codigo` → `Parceiro` em `Parceiro_Nome` e `parceiro_pedido` em `Pedido_Parceiro` (como texto, `texto: true`) (cada coluna pega o primeiro valor preenchido do pedido, de forma independente). O sufixo `_OUT` indica parceiros externos (não é mês); o nome do arquivo é fixo.
   - `Relatorio Ordem de Serviço - Consolidado` (id `ordemServico`, pasta `15e1Qbj…`): chave `Número do Pedido` + `Código do Rastreio da Postagem` → `Nome da Assistência Técnica` em `Assistencia_Tecnica`.
   - `Lista MSPC` (id `listaMspc`, entradas no estoque, pasta `12d0yus…`) `Num do pedido` → presença em `Entrada_Lista` (Sim/Não), **exceto** as linhas que casaram na Ordem de Serviço (pedido + rastreio), que ficam vazias.
 - Novos cruzamentos: acrescentar itens em `CRUZAMENTOS`; não criar botões separados.
