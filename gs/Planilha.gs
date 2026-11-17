@@ -125,6 +125,7 @@ function atualizar_(reprocessar, automatico) {
   const colStatus = garantirColuna_(aba, cfg.COL_STATUS);
   const colData = garantirColuna_(aba, cfg.COL_DATA, 'dd/mm/yyyy');
   const colCidade = garantirColuna_(aba, cfg.COL_CIDADE);
+  const colPrevisao = garantirColuna_(aba, cfg.COL_PREVISAO, 'dd/mm/yyyy');
 
   const total = aba.getLastRow() - cab;
   if (total <= 0) {
@@ -141,6 +142,7 @@ function atualizar_(reprocessar, automatico) {
     status: status,
     datas: aba.getRange(cab + 1, colData, total, 1).getValues(),
     cidades: aba.getRange(cab + 1, colCidade, total, 1).getValues(),
+    previsoes: aba.getRange(cab + 1, colPrevisao, total, 1).getValues(),
     protocolos: lerColunaOpcional_(aba, cfg.COL_PROTOCOLO, total),
     fuso: aba.getParent().getSpreadsheetTimeZone()
   };
@@ -190,6 +192,7 @@ function atualizar_(reprocessar, automatico) {
       aba.getRange(cab + 1 + de, colStatus, ate - de + 1, 1).setValues(status.slice(de, ate + 1));
       aba.getRange(cab + 1 + de, colData, ate - de + 1, 1).setValues(dados.datas.slice(de, ate + 1));
       aba.getRange(cab + 1 + de, colCidade, ate - de + 1, 1).setValues(dados.cidades.slice(de, ate + 1));
+      aba.getRange(cab + 1 + de, colPrevisao, ate - de + 1, 1).setValues(dados.previsoes.slice(de, ate + 1));
 
       somarContagem_(rastro, r);
       somarContagem_(intelipost, r.intelipost);
@@ -317,6 +320,7 @@ function processarLote_(lote, dados) {
   const ultimo = {}; // linha -> evento mais recente entre os códigos da linha
   const erros = {};  // linha -> erro do rastro (usado só quando não há outra fonte de status)
   const expirados = {}; // linha -> Rastro respondeu SRO-012 (postado há mais de 180 dias)
+  const previsao = {};  // linha -> dtPrevista do código com o evento mais recente (ou o primeiro que tiver)
   consultarRastroLote_(alvos.map(function (a) { return a.codigo; })).forEach(function (resp, k) {
     const i = alvos[k].i;
     const r = interpretarRastro_(resp);
@@ -329,7 +333,12 @@ function processarLote_(lote, dados) {
       return;
     }
     contagem.ok++;
-    if (!ultimo[i] || r.ultimo.dataHora > ultimo[i].dataHora) ultimo[i] = r.ultimo;
+    if (!ultimo[i] || r.ultimo.dataHora > ultimo[i].dataHora) {
+      ultimo[i] = r.ultimo;
+      if (r.dtPrevista) previsao[i] = r.dtPrevista;
+    } else if (r.dtPrevista && !previsao[i]) {
+      previsao[i] = r.dtPrevista;
+    }
   });
 
   lote.forEach(function (i) {
@@ -338,6 +347,9 @@ function processarLote_(lote, dados) {
       const data = dataOcorrencia_(ultimo[i].dataHora, dados.fuso);
       if (data) dados.datas[i][0] = data;
       if (ultimo[i].cidade) dados.cidades[i][0] = ultimo[i].cidade; // cidade da unidade do último evento
+      // previsão de entrega (pode ser reprogramada pelos Correios: sempre a mais atual); sem previsão, fica a anterior
+      const prevista = previsao[i] && dataOcorrencia_(previsao[i], dados.fuso);
+      if (prevista) dados.previsoes[i][0] = prevista;
     } else if (expirados[i]) {
       // o Rastro não consulta mais este objeto: marca como final para não gastar cota nas próximas execuções
       dados.status[i][0] = marcarRastreioExpirado_(dados.status[i][0]);
@@ -360,7 +372,8 @@ function marcarRastreioExpirado_(status) {
  * Linhas Jadlog do lote: uma chamada ao proxy da Intelipost com "Protocolo" + "RE" de cada linha.
  * O último evento define "Status tracking" (estado geral em ESTADOS_INTELIPOST ou o nome do
  * evento resumido), "Data Ocorrencia" e "cidade ultima interação" (cidade do evento mais recente
- * que tiver cidade). Erro só é gravado se a linha não tiver status anterior válido.
+ * que tiver cidade) e, se o proxy enviar, "Data Prevista Entrega". Erro só é gravado se a linha não
+ * tiver status anterior válido.
  * Devolve { ok, falhas, erros }.
  */
 function processarJadlog_(lote, dados, tipo) {
@@ -386,6 +399,7 @@ function processarJadlog_(lote, dados, tipo) {
     dados.status[i][0] = statusIntelipost_(pedido);
     if (pedido.ultimo.data) dados.datas[i][0] = pedido.ultimo.data;
     if (pedido.cidade) dados.cidades[i][0] = pedido.cidade;
+    if (pedido.previsao) dados.previsoes[i][0] = pedido.previsao; // só se o proxy enviar a previsão
   });
   return contagem;
 }

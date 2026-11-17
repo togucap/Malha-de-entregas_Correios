@@ -127,6 +127,8 @@
     chip.className = 'chip ' + classe;
     chip.textContent = r.status || 'Sem status';
     $('historicoAtualizado').textContent = r.atualizadoEm ? 'Última atualização: ' + r.atualizadoEm : '';
+    $('historicoPrevisao').textContent = r.previsao ? 'Previsão de entrega: ' + r.previsao : '';
+    $('historicoPrevisao').hidden = !r.previsao;
 
     $('historicoEventos').innerHTML = (r.eventos || []).map(function (e, i) {
       var linhas = '';

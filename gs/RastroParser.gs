@@ -7,7 +7,8 @@
  *                                                   unidadeDestino?: { tipo, endereco: { cidade, uf } } }] }] }
  * Sem eventos, o objeto traz `mensagem` (ex.: "SRO-020: Objeto não encontrado na base de dados dos Correios").
  *
- * Devolve { erro: string | null, codigo, eventos: [...] (mais recente primeiro), ultimo: evento | null }
+ * Devolve { erro: string | null, codigo, dtPrevista, eventos: [...] (mais recente primeiro), ultimo: evento | null }
+ * dtPrevista = previsão de entrega do objeto (AAAA-MM-DDTHH:MM:SS, ex.: "2026-11-17T23:59:59") ou ''.
  */
 function interpretarRastro_(resp) {
   let j = null;
@@ -39,6 +40,7 @@ function interpretarRastro_(resp) {
   return {
     erro: eventos.length ? null : (obj.mensagem || 'objeto sem eventos'),
     codigo: obj.codObjeto || '',
+    dtPrevista: obj.dtPrevista || '',
     eventos: eventos,
     ultimo: eventos[0] || null
   };

@@ -8,7 +8,8 @@
  *       event_date (ms), event_date_iso,
  *       location: { city, state_code } }] } }] }
  *
- * Devolve { erro: string | null, pedidos: { CODIGO: { ultimaOcorrencia, eventos, ultimo, cidade } } }
+ * Devolve { erro: string | null, pedidos: { CODIGO: { ultimaOcorrencia, eventos, ultimo, cidade, previsao } } }
+ * previsao = data prevista de entrega (Date) se o proxy enviar (ver CAMPOS_PREVISAO_INTELIPOST), senão null.
  * com os eventos do mais antigo para o mais recente; `cidade` é a do evento mais recente que tiver cidade.
  */
 function interpretarIntelipost_(resp) {
@@ -43,10 +44,34 @@ function interpretarIntelipost_(resp) {
       ultimaOcorrencia: d.ultimaOcorrencia || '',
       eventos: eventos,
       ultimo: eventos[eventos.length - 1] || null,
-      cidade: comCidade.length ? comCidade[comCidade.length - 1].cidade.toUpperCase() : ''
+      cidade: comCidade.length ? comCidade[comCidade.length - 1].cidade.toUpperCase() : '',
+      previsao: previsaoIntelipost_(d)
     };
   });
   return { erro: null, pedidos: pedidos };
+}
+
+/**
+ * Previsão de entrega do pedido. O proxy atual NÃO envia esse dado (só histórico e dados do cliente);
+ * se passar a enviar (ex.: o estimated_delivery_date do pedido na Intelipost), basta usar um destes nomes,
+ * no pedido ou em `detalhes`. Aceita milissegundos, ISO (AAAA-MM-DD...) ou DD/MM/AAAA.
+ */
+const CAMPOS_PREVISAO_INTELIPOST = ['dataPrevista', 'previsaoEntrega', 'estimated_delivery_date', 'estimated_delivery_date_iso'];
+
+function previsaoIntelipost_(d) {
+  const fontes = [d, d.detalhes || {}];
+  for (let f = 0; f < fontes.length; f++) {
+    for (let k = 0; k < CAMPOS_PREVISAO_INTELIPOST.length; k++) {
+      const v = fontes[f][CAMPOS_PREVISAO_INTELIPOST[k]];
+      if (v === null || v === undefined || v === '') continue;
+      if (typeof v === 'number' || /^\d{10,}$/.test(String(v))) return new Date(Number(v));
+      const iso = String(v).match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (iso) return new Date(Number(iso[1]), Number(iso[2]) - 1, Number(iso[3]));
+      const br = String(v).match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+      if (br) return new Date(Number(br[3]), Number(br[2]) - 1, Number(br[1]));
+    }
+  }
+  return null;
 }
 
 // Texto do "Status tracking": estado geral conhecido (ESTADOS_INTELIPOST) ou nome do último evento resumido

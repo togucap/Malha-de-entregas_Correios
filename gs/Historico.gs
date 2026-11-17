@@ -12,7 +12,7 @@
  *   também aceita o código já com "RE".
  *
  * Devolve (só texto, nada de Date, para o google.script.run):
- *   { codigo, fonte, status, atualizadoEm, eventos: [{ titulo, detalhe, de, para, local, dataHora }],
+ *   { codigo, fonte, status, atualizadoEm, previsao ("dd/MM/yyyy" ou ''), eventos: [{ titulo, detalhe, de, para, local, dataHora }],
  *     avisos: [texto], erro: texto | null }
  * eventos do mais recente para o mais antigo; dataHora "dd/MM/yyyy, HH:mm:ss".
  * Dados de cliente (endereço, nome) da Intelipost não são lidos.
@@ -76,6 +76,7 @@ function historicoRastro_(codigo) {
     fonte: FONTE_HISTORICO.RASTRO,
     status: resumirStatus_(rastro.ultimo.descricao),
     atualizadoEm: dataHoraRastro_(rastro.ultimo.dataHora),
+    previsao: dataHoraRastro_(rastro.dtPrevista).split(',')[0],
     eventos: rastro.eventos.map(function (e) {
       return {
         titulo: e.descricao,
@@ -194,6 +195,7 @@ function historicoIntelipost_(codigo) {
     fonte: FONTE_HISTORICO.INTELIPOST,
     status: statusIntelipost_(pedido),
     atualizadoEm: quando(pedido.ultimo.data),
+    previsao: pedido.previsao ? Utilities.formatDate(pedido.previsao, fuso, 'dd/MM/yyyy') : '',
     // o parser entrega do mais antigo para o mais recente
     eventos: pedido.eventos.slice().reverse().map(function (e) {
       const titulo = frase_(e.nome || e.estadoTraduzido);
