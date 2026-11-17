@@ -6,8 +6,11 @@
 
 const COLUNAS_ACOMPANHAMENTO_OUT = [
   'Protocolo', 'Pedido', 'Dt. autorização', 'Dt. postagem', 'Autorização Postagem', 'Código convertido',
-  'Status tracking', 'Data Ocorrencia', 'cidade ultima interação', 'Parceiro_Nome', 'Entrada_Lista', 'Pedido_Parceiro'
+  'Status tracking', 'Data Ocorrencia', 'Data Prevista Entrega', 'cidade ultima interação', 'Parceiro_Nome', 'Entrada_Lista',
+  'Pedido_Parceiro'
 ];
+// colunas mostradas só com a data (a previsão do Rastro vem com hora 23:59:59, que não interessa na tela)
+const SO_DATA_ACOMPANHAMENTO_OUT = ['Data Prevista Entrega'];
 const FILTRO_ACOMPANHAMENTO_OUT = 'Parceiro_Nome'; // só linhas com esta coluna preenchida
 
 /**
@@ -40,19 +43,21 @@ function dadosAcompanhamentoOut() {
 
   const iFiltro = pos[COLUNAS_ACOMPANHAMENTO_OUT.indexOf(FILTRO_ACOMPANHAMENTO_OUT)];
   const iStatus = pos[COLUNAS_ACOMPANHAMENTO_OUT.indexOf('Status tracking')];
+  const soData = COLUNAS_ACOMPANHAMENTO_OUT.map(function (nome) { return SO_DATA_ACOMPANHAMENTO_OUT.indexOf(nome) >= 0; });
   if (iFiltro < 0 || !total) return resposta;
 
   aba.getRange(cab + 1, 1, total, largura).getValues().forEach(function (r) {
     if (String(r[iFiltro] == null ? '' : r[iFiltro]).trim() === '') return;
-    resposta.linhas.push(pos.map(function (i) { return i < 0 ? '' : valorParaTela_(r[i], fuso); }));
+    resposta.linhas.push(pos.map(function (i, k) { return i < 0 ? '' : valorParaTela_(r[i], fuso, soData[k]); }));
     resposta.finalizadas.push(iStatus >= 0 && statusFinalizado_(r[iStatus]));
   });
   return resposta;
 }
 
-// Valor da planilha -> texto para a tela (google.script.run não transporta Date)
-function valorParaTela_(v, fuso) {
+// Valor da planilha -> texto para a tela (google.script.run não transporta Date); soData = sem a hora
+function valorParaTela_(v, fuso, soData) {
   if (Object.prototype.toString.call(v) === '[object Date]') {
+    if (soData) return Utilities.formatDate(v, fuso, 'dd/MM/yyyy');
     const hora = Utilities.formatDate(v, fuso, 'HH:mm');
     return Utilities.formatDate(v, fuso, 'dd/MM/yyyy') + (hora === '00:00' ? '' : ' ' + hora);
   }
