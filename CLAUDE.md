@@ -13,8 +13,8 @@ Pastas no GitHub: `gs/` (servidor), `html/` (páginas), `css/` e `js/` (estilos 
 - `Reversa.gs` — montagem/envio do SOAP de Logística Reversa (individual e em lote com `fetchAll`) e leitura do WSDL/XSD para a tela de teste (`descreverReversa`).
 - `ReversaSolicitacao.gs` — solicitação de autorização (tela de teste): validar (`validarPostagemReversa`, não cria), solicitar (`solicitarPostagemReversa`) e cancelar (`cancelarPedido`), JSON → XML na ordem do WSDL.
 - `ReversaParser.gs` — parser do XML (`XmlService`): uma entrada por autorização, histórico agrupado, status atual.
-- `Rastro.gs` — API Rastro (REST): consulta individual (tela de teste) e em lote com `fetchAll`, renovando o token em 401.
-- `RastroParser.gs` — parser do JSON do Rastro: eventos (mais recente primeiro), último evento, mensagem de erro (ex.: SRO-020).
+- `Rastro.gs` — API Rastro (REST): consulta individual (tela de teste) e em lote com `fetchAll` (`consultarRastroLote_(codigos, resultado)`, padrão `U`; o histórico usa `T`), renovando o token em 401.
+- `RastroParser.gs` — parser do JSON do Rastro: eventos (mais recente primeiro; com `unidade`/`destino` em texto "Tipo - CIDADE / UF"), último evento, mensagem de erro (ex.: SRO-020).
 - `Status.gs` — resumo do `Status tracking` (`RESUMOS_STATUS`) e status finalizadores (`STATUS_FINAIS`); listas editáveis.
 - `Classificador.gs` — tipo do código pela quantidade de caracteres: 10 dígitos autorização, 13 (`AA999999999AA`) rastreio, 14 dígitos Jadlog.
 - `Planilha.gs` — menu **Correios** (`onOpen`) e atualização da aba base: lê `Autorização Postagem`, grava `Código convertido`, `Status tracking`, `Data Ocorrencia` e `cidade ultima interação` (Reversa → Rastro).
@@ -22,13 +22,16 @@ Pastas no GitHub: `gs/` (servidor), `html/` (páginas), `css/` e `js/` (estilos 
 - `Importacao.gs` — botão "Importar protocolos do Drive": alimenta a aba base com o relatório `Consolidado_Protocolos` (remove duplicados e linhas sem autorização, acrescenta protocolos novos; cópia oculta `<aba>_backup` antes de gravar).
 - `Cruzamentos.gs` — lista `CRUZAMENTOS` (id, pasta, arquivo, chave da base, chave do relatório, chave composta com rastreio, exclusão de linhas de outro cruzamento, colunas trazidas ou de presença Sim/Não) e o botão de menu "Cruzar com relatórios do Drive", que executa todos na ordem da lista.
 - `Intelipost.gs` — consulta Jadlog via Web App proxy corporativo da Intelipost: lote (uma chamada por lote), consulta crua da tela de teste e amostra de protocolos da base.
-- `IntelipostParser.gs` — interpreta `{ sucesso, dados }` do proxy: eventos do `detalhes.historico` por pedido, último evento, cidade; `statusIntelipost_`.
+- `IntelipostParser.gs` — interpreta `{ sucesso, dados }` do proxy: eventos do `detalhes.historico` por pedido (com `descricao` e `estadoTraduzido`), último evento, cidade; `statusIntelipost_`.
+- `Historico.gs` — `historicoTracking({ codigo, autorizacao, protocolo })`: histórico completo de um objeto, consulta pontual da janela "Histórico" (ver seção própria).
 - `gs/Interface.gs` — páginas HtmlService: `doGet` (App da Web: painel; `?pagina=teste` = tela de teste), `abrirPainel` / `abrirTeste` (menu Correios), `include(nome)` para os modelos.
 - `gs/Acompanhamento.gs` — `dadosAcompanhamentoOut()` para a tela "Acompanhamento - OUT": linhas da aba base com `Parceiro_Nome` preenchido, 12 colunas, valores já em texto (datas `dd/MM/yyyy[ HH:mm]`, números com todos os dígitos).
 - `html/Index.html` — tela de teste das APIs (resposta crua).
 - `html/VistaAcompanhamento.html` + `css/EstiloAcompanhamento.html` + `js/TelaAcompanhamento.html` — tela "Acompanhamento - OUT" (estrutura, estilo, lógica).
+- `html/ModalHistorico.html` + `css/EstiloHistorico.html` + `js/HistoricoTracking.html` — janela "Histórico de rastreio" (`window.HistoricoTracking.abrir`).
+- `js/StatusVisual.html` — `window.classeStatus(status)`: cor do chip de status, usada pela tabela e pela janela de histórico.
 - `js/FiltroMultiplo.html` + `css/EstiloFiltroMultiplo.html` — componente reutilizável de filtro em dropdown com seleção múltipla (`window.FiltroMultiplo`: `preencher`, `selecionados`, `limpar`).
-- `html/Painel.html` — painel (interface principal), modelo que inclui `Tokens`, `Base`, `Componentes`, `Tema` e `Navegacao`; por enquanto só a estrutura (barra lateral, cabeçalho, vistas vazias).
+- `html/Painel.html` — painel (interface principal), modelo que inclui `Tokens`, `Base`, `Componentes`, `Tema`, `Navegacao`, as telas (`Vista…`, `Estilo…`, `Tela…`) e a janela de histórico (`ModalHistorico`, `EstiloHistorico`, `HistoricoTracking`, `StatusVisual` antes dos scripts que o usam).
 - `css/Tokens.html` — tokens de cor dos temas escuro (padrão) e claro. `css/Base.html` — tipografia, layout, scrollbar, responsivo. `css/Componentes.html` — cartões, KPI, botões, campos, chips, tabelas, resultado, avisos, progresso, segmentado, modal, estado vazio.
 - `js/Tema.html` — troca de tema (`data-theme` no `<html>`, escolha no localStorage). `js/Navegacao.html` — troca de vistas pela barra lateral (`data-vista`), título do cabeçalho e `#vista` no endereço.
 
@@ -44,9 +47,19 @@ Pastas no GitHub: `gs/` (servidor), `html/` (páginas), `css/` e `js/` (estilos 
 ### Tela "Acompanhamento - OUT"
 - Dados: `dadosAcompanhamentoOut()` lê a aba base inteira uma vez; só linhas com `Parceiro_Nome`. Colunas: Protocolo, Pedido, Dt. autorização, Dt. postagem, Autorização Postagem, Código convertido, Status tracking, Data Ocorrencia, cidade ultima interação, Parceiro_Nome, Entrada_Lista, Pedido_Parceiro. Colunas ausentes na base vêm vazias e são avisadas.
 - Visão (controle segmentado): **"Em aberto"** (padrão) = status ainda consultado pelas APIs; **"Finalizado"** = status final. A classificação vem do servidor (`finalizadas[]` em `dadosAcompanhamentoOut`, mesma regra `statusFinalizado_` da atualização). Cada botão mostra quantas linhas passam na pesquisa e nos filtros atuais; sem resultado na visão aberta, o vazio avisa quantos há na outra.
-- Pesquisa (no navegador, sem acento/maiúsculas, parte do texto), vale para as duas visões: Pedido, Autorização Postagem, Código convertido, Parceiro_Nome, Pedido_Parceiro (Protocolo não entra). Filtros `FiltroMultiplo` (opções = valores distintos da visão atual, com contagem; inclui "(vazio)"): Status tracking, Parceiro_Nome, Entrada_Lista. Botões Limpar (pesquisa + filtros) e Atualizar (relê a base).
+- Pesquisa (no navegador, sem acento/maiúsculas, parte do texto): Pedido, Autorização Postagem, Código convertido, Parceiro_Nome, Pedido_Parceiro (Protocolo não entra). **Com termo na pesquisa, a tabela mostra os resultados das duas visões juntos** (em aberto e finalizados, independente do botão de visão); o texto do resumo diz "N protocolo(s) na pesquisa (x em aberto, y finalizado(s))". Filtros `FiltroMultiplo` (opções = valores distintos da visão atual — com pesquisa, das duas —, com contagem; inclui "(vazio)"): Status tracking, Parceiro_Nome, Entrada_Lista. Botões Limpar (pesquisa + filtros) e Atualizar (relê a base).
 - `FiltroMultiplo`: checkboxes (nenhum marcado = todos); "Somente" aparece no hover/foco da linha (sempre visível em toque) e deixa só aquele marcado; busca interna esconde os `<li>` que não contêm o termo; "Selecionar todos" marca só os visíveis; "Limpar" desmarca todos; título "Rótulo (Todos)" / "Rótulo (N selec.)"; sem botão Aplicar — toda mudança chama a função global de `data-ao-mudar` (padrão `aplicarFiltrosGlobais`); eventos por delegação no `document` (click/change/input/Escape); clique fora ou em outro filtro fecha o menu.
-- Tabela: 500 linhas por vez ("Mostrar mais"), cabeçalho fixo, códigos em Plex Mono. Status em chip: entregue = verde; não entregue/cancelado/expirado/desistência/erro = vermelho; rastreio expirado/aguardando/vazio = neutro; demais (em andamento) = laranja. Entrada_Lista: Sim = verde, Não = neutro.
+- Tabela: 500 linhas por vez ("Mostrar mais"), cabeçalho fixo, códigos em Plex Mono. Última coluna "Histórico" (presa à direita na rolagem horizontal): botão que abre a janela de histórico com o `Código convertido` ou, se vazio, a `Autorização Postagem` da linha (linha sem nenhum dos dois fica sem botão). Status em chip: entregue = verde; não entregue/cancelado/expirado/desistência/erro = vermelho; rastreio expirado/aguardando/vazio = neutro; demais (em andamento) = laranja. Entrada_Lista: Sim = verde, Não = neutro.
+
+### Janela "Histórico de rastreio"
+- Consulta **pontual** (só ao clicar; nada é gravado na planilha). A atualização da planilha continua buscando só o último evento.
+- Servidor `historicoTracking` (`gs/Historico.gs`), fonte pelo código:
+  - rastreio de 13 (o `Código convertido` ou o próprio código da coluna) → API Rastro `resultado=T`; se o Rastro não tiver o objeto (SRO-012/020…) e a linha tiver autorização de 10 dígitos, mostra o histórico da autorização (Logística Reversa) com aviso;
+  - autorização de 10 → `acompanharPedido` (histórico); com `numero_etiqueta` → Rastro; sem etiqueta ou Rastro indisponível → eventos da reversa (histórico + situação do objeto, sem repetir);
+  - Jadlog de 14 → a janela já põe `Protocolo + "RE"` no campo → proxy Intelipost (`consultarIntelipostLote_`); dados de cliente não são lidos.
+  - Célula com vários códigos: consulta o primeiro e avisa os outros.
+- Resposta só com texto: `{ codigo, fonte, status (resumido como na planilha), atualizadoEm, eventos [{ titulo, detalhe, de, para, local, dataHora "dd/MM/yyyy, HH:mm:ss" }] (mais recente primeiro), avisos, erro }`.
+- Tela (estrutura da referência): campo "Consultar objeto" + botão "Rastrear" (consulta outro código; a autorização da linha só vai junto enquanto o código for o da linha), nota de atenção, cartão com rótulo (Código de rastreio / Autorização de postagem / Pedido Jadlog), código grande em mono, chip de status e "Última atualização"; "Histórico de movimentação" em linha do tempo vertical (ícone por tipo de evento; o mais recente na cor do status), linhas "De:"/"Para:" (Rastro com `unidadeDestino`) ou o local, data em mono. Fecha com ×, clique fora ou Esc (foco volta ao botão da linha); resposta atrasada de consulta anterior é descartada.
 
 ## Configuração
 

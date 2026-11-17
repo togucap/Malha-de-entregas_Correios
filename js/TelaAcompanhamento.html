@@ -5,10 +5,12 @@
  *
  * - Visão "Em aberto" (padrão) = status ainda consultado pelas APIs; "Finalizado" = status final
  *   (mesma regra da atualização, calculada no servidor). Nenhuma linha é descartada: só muda a visão.
- * - Pesquisa: vale nas duas visões; cada botão da visão mostra quantos resultados tem com a
- *   pesquisa e os filtros atuais.
+ * - Pesquisa: com termo, mostra os resultados das duas visões (em aberto e finalizados) juntos;
+ *   cada botão da visão mostra quantos resultados tem com a pesquisa e os filtros atuais.
  * - Filtros: js/FiltroMultiplo (seleção múltipla; nenhum marcado = todos). As opções de cada filtro
- *   vêm das linhas da visão atual. Toda mudança chama aplicarFiltrosGlobais().
+ *   vêm das linhas da visão atual (com pesquisa, das duas). Toda mudança chama aplicarFiltrosGlobais().
+ * - Última coluna: botão "Histórico" (js/HistoricoTracking) com o Código convertido ou, se vazio,
+ *   a Autorização Postagem da linha.
  */
 (function () {
   var VISTA = 'acompanhamento-out';
@@ -19,7 +21,7 @@
   var MONO = ['Protocolo', 'Pedido', 'Autorização Postagem', 'Código convertido', 'Pedido_Parceiro'];
   var VAZIO = '__vazio__';
 
-  var estado = { carregado: false, colunas: [], linhas: [], visao: 'aberto', filtradas: [], naOutraVisao: 0, limite: POR_PAGINA };
+  var estado = { carregado: false, colunas: [], linhas: [], visao: 'aberto', pesquisando: false, filtradas: [], naOutraVisao: 0, limite: POR_PAGINA };
 
   function $(id) { return document.getElementById(id); }
 
@@ -36,6 +38,9 @@
   function indice(coluna) { return estado.colunas.indexOf(coluna); }
   function filtros() { return Array.prototype.slice.call(document.querySelectorAll('[data-vista="' + VISTA + '"] [data-filtro-multiplo]')); }
   function naVisao(l) { return estado.visao === 'finalizado' ? l.finalizada : !l.finalizada; }
+  // linhas consideradas: as da visão atual; com pesquisa, as das duas visões
+  function noEscopo(l) { return estado.pesquisando || naVisao(l); }
+  function termoBusca() { return normalizar($('buscaOut').value); }
 
   /* ---------- Carregamento ---------- */
 
@@ -59,6 +64,7 @@
       return { v: v, finalizada: !!(d.finalizadas && d.finalizadas[k]), busca: normalizar(busca.map(function (i) { return v[i]; }).join(' ')) };
     });
     $('atualizadoOut').textContent = 'Base lida em ' + d.atualizadoEm;
+    estado.pesquisando = !!termoBusca();
     if (d.faltando && d.faltando.length) {
       avisar('Colunas não encontradas na base: ' + d.faltando.join(', ') + '. Elas aparecem vazias.');
     }
@@ -81,13 +87,13 @@
 
   /* ---------- Filtros ---------- */
 
-  // opções de cada filtro: valores distintos das linhas da visão atual, com a quantidade
+  // opções de cada filtro: valores distintos das linhas no escopo (visão atual ou, com pesquisa, as duas)
   function montarFiltros() {
     filtros().forEach(function (raiz) {
       var i = indice(raiz.getAttribute('data-coluna'));
       var contagem = {};
       estado.linhas.forEach(function (l) {
-        if (!naVisao(l)) return;
+        if (!noEscopo(l)) return;
         var v = i < 0 ? '' : l.v[i];
         var chave = v === '' ? VAZIO : v;
         contagem[chave] = (contagem[chave] || 0) + 1;
@@ -105,7 +111,7 @@
 
   // linha passa na pesquisa e nos filtros marcados (independente da visão)
   function criterios() {
-    var termo = normalizar($('buscaOut').value);
+    var termo = termoBusca();
     var ativos = filtros().map(function (raiz) {
       var marcados = FiltroMultiplo.selecionados(raiz);
       var conjunto = {};
@@ -124,18 +130,24 @@
 
   // chamada pelos filtros (data-ao-mudar), pela pesquisa e pela troca de visão
   function aplicar() {
+    var pesquisando = !!termoBusca();
+    if (pesquisando !== estado.pesquisando) {
+      estado.pesquisando = pesquisando;
+      montarFiltros(); // pesquisa liga/desliga: opções passam a vir das duas visões (ou só da atual)
+    }
     var passa = criterios();
     var abertos = 0, finalizados = 0;
     estado.filtradas = [];
     estado.linhas.forEach(function (l) {
       if (!passa(l)) return;
       if (l.finalizada) finalizados++; else abertos++;
-      if (naVisao(l)) estado.filtradas.push(l);
+      if (noEscopo(l)) estado.filtradas.push(l);
     });
     $('qtdAbertoOut').textContent = abertos.toLocaleString('pt-BR');
     $('qtdFinalizadoOut').textContent = finalizados.toLocaleString('pt-BR');
     estado.limite = POR_PAGINA;
-    estado.naOutraVisao = estado.visao === 'aberto' ? finalizados : abertos;
+    estado.naOutraVisao = estado.pesquisando ? 0 : estado.visao === 'aberto' ? finalizados : abertos;
+    estado.qtd = { abertos: abertos, finalizados: finalizados };
     desenharLinhas();
   }
   window.aplicarFiltrosGlobais = aplicar;
@@ -157,24 +169,36 @@
   function montarCabecalho() {
     $('tabelaOut').tHead.innerHTML = '<tr>' + estado.colunas.map(function (c) {
       return '<th scope="col">' + escapar(c) + '</th>';
-    }).join('') + '</tr>';
+    }).join('') + '<th scope="col" class="col-acoes">Histórico</th></tr>';
   }
 
-  // cor do chip pelo significado do status (padrão visual)
-  function classeStatus(s) {
-    var t = normalizar(s);
-    if (!t) return 'chip-neutro';
-    if (t.indexOf('erro') === 0) return 'chip-erro';
-    if (t.indexOf('rastreio expirado') >= 0) return 'chip-neutro';
-    if (t.indexOf('nao entregue') >= 0 || /cancelad|expirad|desistencia/.test(t)) return 'chip-erro';
-    if (t.indexOf('entregue') >= 0) return 'chip-sucesso';
-    if (/aguardando/.test(t)) return 'chip-neutro';
-    return 'chip-marca'; // em andamento (em transferência, saiu para entrega, postado, coletado…)
+  // código usado no histórico: Código convertido (rastreio) ou, se vazio, a Autorização Postagem
+  function codigoHistorico(l) {
+    var conv = indice('Código convertido'), aut = indice('Autorização Postagem');
+    return String((conv >= 0 && l.v[conv]) || (aut >= 0 && l.v[aut]) || '').trim();
+  }
+
+  function botaoHistorico(l, k) {
+    if (!codigoHistorico(l)) return '<td class="col-acoes"></td>';
+    var pedido = indice('Pedido') >= 0 ? l.v[indice('Pedido')] : '';
+    return '<td class="col-acoes"><button type="button" class="btn btn-fantasma btn-linha" data-historico="' + k + '"' +
+      ' title="Histórico de rastreio" aria-label="Histórico de rastreio' + (pedido ? ' do pedido ' + escapar(pedido) : '') + '">' +
+      '<svg class="icone" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></button></td>';
+  }
+
+  function abrirHistorico(k, botao) {
+    var l = estado.filtradas[k];
+    if (!l) return;
+    var valor = function (c) { var i = indice(c); return i >= 0 ? l.v[i] : ''; };
+    var contexto = [['Pedido', valor('Pedido')], ['Protocolo', valor('Protocolo')], ['Parceiro', valor('Parceiro_Nome')]]
+      .filter(function (p) { return p[1]; }).map(function (p) { return p[0] + ' ' + p[1]; }).join(' · ');
+    HistoricoTracking.abrir({ codigo: codigoHistorico(l), protocolo: valor('Protocolo'), autorizacao: valor('Autorização Postagem'),
+      contexto: contexto, origem: botao });
   }
 
   function celula(coluna, valor) {
     if (coluna === 'Status tracking') {
-      return '<td>' + (valor ? '<span class="chip ' + classeStatus(valor) + '">' + escapar(valor) + '</span>' : '') + '</td>';
+      return '<td>' + (valor ? '<span class="chip ' + window.classeStatus(valor) + '">' + escapar(valor) + '</span>' : '') + '</td>';
     }
     if (coluna === 'Entrada_Lista' && valor) {
       return '<td><span class="chip ' + (normalizar(valor) === 'sim' ? 'chip-sucesso' : 'chip-neutro') + '">' + escapar(valor) + '</span></td>';
@@ -186,8 +210,8 @@
   function desenharLinhas() {
     var naOutraVisao = estado.naOutraVisao; // resultados da pesquisa/filtros na visão que não está aberta
     var visiveis = estado.filtradas.slice(0, estado.limite);
-    $('tabelaOut').tBodies[0].innerHTML = visiveis.map(function (l) {
-      return '<tr>' + estado.colunas.map(function (c, i) { return celula(c, l.v[i]); }).join('') + '</tr>';
+    $('tabelaOut').tBodies[0].innerHTML = visiveis.map(function (l, k) {
+      return '<tr>' + estado.colunas.map(function (c, i) { return celula(c, l.v[i]); }).join('') + botaoHistorico(l, k) + '</tr>';
     }).join('');
 
     var achadas = estado.filtradas.length;
@@ -198,7 +222,11 @@
     $('vazioTextoOut').textContent = naOutraVisao
       ? naOutraVisao.toLocaleString('pt-BR') + ' resultado(s) na visão "' + outra + '".'
       : 'Ajuste a pesquisa ou os filtros.';
-    $('infoOut').textContent = achadas.toLocaleString('pt-BR') + ' protocolo(s) ' + nomeVisao +
+    var descricao = estado.pesquisando
+      ? ' na pesquisa (' + estado.qtd.abertos.toLocaleString('pt-BR') + ' em aberto, ' +
+        estado.qtd.finalizados.toLocaleString('pt-BR') + ' finalizado(s))'
+      : ' ' + nomeVisao;
+    $('infoOut').textContent = achadas.toLocaleString('pt-BR') + ' protocolo(s)' + descricao +
       (achadas > visiveis.length ? ' · mostrando ' + visiveis.length.toLocaleString('pt-BR') : '');
     $('maisOut').hidden = achadas <= visiveis.length;
   }
@@ -218,6 +246,11 @@
     });
     $('atualizarOut').addEventListener('click', carregar);
     $('maisOut').addEventListener('click', function () { estado.limite += POR_PAGINA; desenharLinhas(); });
+    // botão "Histórico" de cada linha (delegação: as linhas são redesenhadas a cada filtro)
+    $('tabelaOut').tBodies[0].addEventListener('click', function (e) {
+      var botao = e.target.closest('[data-historico]');
+      if (botao) abrirHistorico(Number(botao.getAttribute('data-historico')), botao);
+    });
   });
 
   // carrega na primeira vez que a tela é aberta (evento disparado por js/Navegacao)

@@ -3,7 +3,8 @@
  *
  * Formato esperado (resumido):
  *   { objetos: [{ codObjeto, mensagem?, eventos: [{ codigo, tipo, dtHrCriado, descricao, detalhe?,
- *                                                   unidade: { endereco: { cidade, uf } } }] }] }
+ *                                                   unidade: { tipo, nome?, endereco: { cidade, uf } },
+ *                                                   unidadeDestino?: { tipo, endereco: { cidade, uf } } }] }] }
  * Sem eventos, o objeto traz `mensagem` (ex.: "SRO-020: Objeto não encontrado na base de dados dos Correios").
  *
  * Devolve { erro: string | null, codigo, eventos: [...] (mais recente primeiro), ultimo: evento | null }
@@ -28,7 +29,10 @@ function interpretarRastro_(resp) {
       descricao: e.descricao || '',
       detalhe: e.detalhe || '',
       cidade: (e.unidade && e.unidade.endereco && e.unidade.endereco.cidade) || '',
-      uf: (e.unidade && e.unidade.endereco && e.unidade.endereco.uf) || ''
+      uf: (e.unidade && e.unidade.endereco && e.unidade.endereco.uf) || '',
+      // para o histórico (gs/Historico): "Unidade de Tratamento - INDAIATUBA / SP"
+      unidade: textoUnidadeRastro_(e.unidade),
+      destino: textoUnidadeRastro_(e.unidadeDestino)
     };
   }).sort(function (a, b) { return a.dataHora < b.dataHora ? 1 : a.dataHora > b.dataHora ? -1 : 0; });
 
@@ -38,6 +42,14 @@ function interpretarRastro_(resp) {
     eventos: eventos,
     ultimo: eventos[0] || null
   };
+}
+
+// "Tipo da unidade - CIDADE / UF" (partes ausentes são omitidas)
+function textoUnidadeRastro_(u) {
+  if (!u) return '';
+  const end = u.endereco || {};
+  const lugar = [end.cidade, end.uf].filter(Boolean).join(' / ');
+  return [u.tipo || u.nome || '', lugar].filter(Boolean).join(' - ');
 }
 
 // Mensagem de erro em qualquer um dos formatos conhecidos ({ msgs: [...] }, { mensagem }, objetos[0].mensagem)

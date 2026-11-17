@@ -4,7 +4,7 @@
  * Formato (resumido; os dados do cliente em `endereco`/`detalhes` não são lidos):
  *   { sucesso, total, erro?, dados: [{ pedido, ultimaOcorrencia, detalhes: { historico: [{
  *       shipment_order_volume_state,              // estado geral: NEW, IN_TRANSIT, DELIVERED...
- *       shipment_volume_micro_state: { default_name },  // nome do evento: "EM TRANSFERENCIA"
+ *       shipment_volume_micro_state: { default_name, description },  // "EM TRANSFERENCIA" + texto do evento
  *       event_date (ms), event_date_iso,
  *       location: { city, state_code } }] } }] }
  *
@@ -29,6 +29,9 @@ function interpretarIntelipost_(resp) {
       return {
         estado: h.shipment_order_volume_state || micro.shipment_volume_state || '',
         nome: micro.default_name || micro.name || h.shipment_order_volume_state_localized || '',
+        // para o histórico (gs/Historico): texto do evento e estado geral traduzido
+        descricao: micro.description || h.esprinter_message || '',
+        estadoTraduzido: micro.shipment_volume_state_localized || h.shipment_order_volume_state_localized || '',
         data: isFinite(ms) && ms > 0 ? new Date(ms) : null,
         cidade: local.city || '',
         uf: local.state_code || ''

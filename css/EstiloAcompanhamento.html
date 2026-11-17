@@ -29,6 +29,14 @@
 .tabela td.mono { font-family: 'IBM Plex Mono', monospace; font-weight: 600; font-size: 13px; }
 .tabela td.numero { font-variant-numeric: tabular-nums; }
 
+/* coluna "Histórico": fica presa à direita quando a tabela rola na horizontal */
+.tabela .col-acoes { position: sticky; right: 0; width: 1%; padding: 4px 12px; text-align: center; background: var(--bg-card); box-shadow: inset 1px 0 0 var(--border-color); }
+.tabela th.col-acoes { z-index: 2; background: var(--bg-subtle); padding: 10px 12px; }
+.tabela tbody tr:hover td.col-acoes { background: var(--table-hover); }
+.btn-linha { width: 32px; height: 32px; padding: 0; color: var(--text-support); }
+.btn-linha:hover { color: var(--brand-accent); border-color: var(--brand-accent); }
+.btn-linha .icone { width: 16px; height: 16px; }
+
 .mais-linhas { display: flex; justify-content: center; margin-top: 12px; }
 
 /* telas médias: pesquisa + botões na 1ª linha, os três filtros na 2ª */

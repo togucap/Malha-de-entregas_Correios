@@ -19,12 +19,12 @@ function consultarRastro(req) {
 }
 
 /**
- * Consulta vários códigos em paralelo (buscarTodos_, com novas tentativas), só o último evento.
- * Se algum vier 401, renova o token e repete esses. Devolve um array de
- * { etapa, url, status, body } na mesma ordem de `codigos`.
+ * Consulta vários códigos em paralelo (buscarTodos_, com novas tentativas); por padrão só o último
+ * evento (resultado 'U'; o histórico usa 'T'). Se algum vier 401, renova o token e repete esses.
+ * Devolve um array de { etapa, url, status, body } na mesma ordem de `codigos`.
  */
-function consultarRastroLote_(codigos) {
-  const urls = codigos.map(function (c) { return urlRastro_(c, 'U'); });
+function consultarRastroLote_(codigos, resultado) {
+  const urls = codigos.map(function (c) { return urlRastro_(c, resultado || 'U'); });
 
   let t = obterToken_(false);
   if (t.erro) return urls.map(function () { return t.erro; });

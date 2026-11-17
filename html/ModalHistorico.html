@@ -1,0 +1,55 @@
+<!-- Janela "Histórico de rastreio" (consulta pontual de todos os eventos). Lógica em js/HistoricoTracking, estilo em css/EstiloHistorico. -->
+<div class="modal-fundo" id="historicoFundo" hidden>
+  <div class="modal modal-historico" role="dialog" aria-modal="true" aria-labelledby="historicoTitulo">
+    <button class="btn btn-fantasma btn-icone modal-fechar" type="button" data-fechar-historico aria-label="Fechar" title="Fechar (Esc)">
+      <svg class="icone" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+    </button>
+
+    <div class="historico-topo">
+      <h2 class="historico-titulo" id="historicoTitulo">Histórico de rastreio</h2>
+      <p class="texto-apoio" id="historicoContexto"></p>
+    </div>
+
+    <form class="historico-busca" id="historicoForm" autocomplete="off">
+      <label class="campo-rotulo" for="historicoCodigo">Consultar objeto</label>
+      <div class="historico-busca-linha">
+        <input class="input mono" id="historicoCodigo" type="search" spellcheck="false"
+               placeholder="Código de rastreio, autorização ou protocolo + RE">
+        <button class="btn btn-brand" id="historicoRastrear" type="submit" aria-label="Rastrear">
+          <svg class="icone" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          <span>Rastrear</span>
+        </button>
+      </div>
+      <p class="historico-nota">Atenção: os Correios só consultam objetos postados nos últimos 180 dias; a autorização sem postagem mostra o histórico da Logística Reversa.</p>
+    </form>
+
+    <div class="historico-corpo" id="historicoCorpo" aria-live="polite">
+      <!-- carregando -->
+      <div class="historico-carregando" id="historicoCarregando" hidden>
+        <div class="progresso"><div class="progresso-barra historico-progresso"></div></div>
+        <span class="texto-apoio">Consultando…</span>
+      </div>
+
+      <div class="aviso aviso-perigo" id="historicoErro" role="alert" hidden></div>
+      <div id="historicoAvisos"></div>
+
+      <!-- resultado -->
+      <div id="historicoResultado" hidden>
+        <div class="historico-objeto">
+          <div class="historico-objeto-info">
+            <div class="historico-rotulo" id="historicoRotuloCodigo">Código de rastreio</div>
+            <div class="historico-codigo mono" id="historicoCodigoTexto"></div>
+            <div class="texto-apoio" id="historicoFonte"></div>
+          </div>
+          <div class="historico-objeto-status">
+            <span class="chip" id="historicoStatus"></span>
+            <span class="texto-apoio" id="historicoAtualizado"></span>
+          </div>
+        </div>
+
+        <h3 class="historico-secao">Histórico de movimentação</h3>
+        <ol class="linha-tempo" id="historicoEventos"></ol>
+      </div>
+    </div>
+  </div>
+</div>

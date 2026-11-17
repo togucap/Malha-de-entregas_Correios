@@ -1,0 +1,164 @@
+<script>
+/*
+ * Janela "Histórico de rastreio" (html/ModalHistorico): consulta pontual de todos os eventos de um
+ * objeto pelo servidor (historicoTracking em gs/Historico), que escolhe a fonte pelo código:
+ * rastreio (13) -> Rastro; autorização (10) -> Logística Reversa (e Rastro, se já postado);
+ * protocolo + "RE" -> Intelipost (Jadlog).
+ *
+ * Uso: HistoricoTracking.abrir({ codigo, protocolo, autorizacao, contexto, origem })
+ *   codigo      = "Código convertido" ou, se vazio, "Autorização Postagem" da linha
+ *   protocolo   = "Protocolo" da linha (Jadlog: a consulta usa Protocolo + "RE")
+ *   autorizacao = "Autorização Postagem" da linha: se o Rastro não tiver o código convertido
+ *                 (ex.: mais de 180 dias), o servidor mostra o histórico da autorização
+ *   contexto  = texto do topo (ex.: "Pedido 123 · Protocolo 456")
+ *   origem    = elemento que recebe o foco de volta ao fechar
+ * Fecha com ×, clique fora ou Esc. Depende de js/StatusVisual (window.classeStatus).
+ */
+(function () {
+  // inicial/autorizacao: a autorização da linha só vai junto enquanto o código do campo for o da linha
+  var estado = { origem: null, pedido: 0, inicial: '', autorizacao: '' };
+
+  var ICONES = {
+    entregue: '<path d="M20 6 9 17l-5-5"/>',
+    falha: '<path d="M18 6 6 18M6 6l12 12"/>',
+    entrega: '<path d="M1 3h15v13H1z"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/>',
+    transito: '<path d="M5 12h14"/><path d="m13 6 6 6-6 6"/>',
+    pacote: '<path d="M21 8 12 3 3 8v8l9 5 9-5V8z"/><path d="m3 8 9 5 9-5"/><path d="M12 13v8"/>',
+    relogio: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+    ponto: '<circle cx="12" cy="12" r="3"/>'
+  };
+  var PINO = '<svg class="icone" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/></svg>';
+  var BANDEIRA = '<svg class="icone" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 22V4"/><path d="M4 4h13l-2 4 2 4H4"/></svg>';
+
+  function $(id) { return document.getElementById(id); }
+
+  function normalizar(s) {
+    return String(s == null ? '' : s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+  }
+
+  function escapar(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function icone(titulo) {
+    var t = normalizar(titulo);
+    var nome = /nao entregue|cancelad|expirad|devolv|devolucao|desistencia|nao realizada|insucesso|ausente|recusad/.test(t) ? 'falha'
+      : /entregue/.test(t) ? 'entregue'
+      : /saiu para entrega|rota de entrega/.test(t) ? 'entrega'
+      : /transferencia|transito|encaminhado/.test(t) ? 'transito'
+      : /postado|coletad|coleta realizada|criado|recebido/.test(t) ? 'pacote'
+      : /aguardando|pendente/.test(t) ? 'relogio' : 'ponto';
+    return '<svg class="icone" viewBox="0 0 24 24" aria-hidden="true">' + ICONES[nome] + '</svg>';
+  }
+
+  /* ---------- Abrir / fechar ---------- */
+
+  function abrir(dados) {
+    dados = dados || {};
+    estado.origem = dados.origem || document.activeElement;
+    var codigo = String(dados.codigo || '').trim();
+    var protocolo = String(dados.protocolo || '').replace(/\s+/g, '');
+    // Jadlog (14 dígitos): o que se consulta é Protocolo + "RE"
+    if (/^\d{14}$/.test(codigo) && protocolo) codigo = protocolo.toUpperCase().replace(/RE$/, '') + 'RE';
+    $('historicoContexto').textContent = dados.contexto || '';
+    $('historicoCodigo').value = codigo;
+    estado.inicial = codigo;
+    estado.autorizacao = String(dados.autorizacao || '').trim();
+    $('historicoFundo').hidden = false;
+    document.body.style.overflow = 'hidden';
+    document.querySelector('[data-fechar-historico]').focus();
+    consultar(codigo);
+  }
+
+  function fechar() {
+    if ($('historicoFundo').hidden) return;
+    estado.pedido++; // descarta a resposta que ainda estiver a caminho
+    $('historicoFundo').hidden = true;
+    document.body.style.overflow = '';
+    if (estado.origem && estado.origem.focus) estado.origem.focus();
+  }
+
+  /* ---------- Consulta ---------- */
+
+  function consultar(codigo) {
+    var pedido = ++estado.pedido;
+    $('historicoErro').hidden = true;
+    $('historicoAvisos').innerHTML = '';
+    $('historicoResultado').hidden = true;
+    if (!codigo) { mostrarErro('Informe o código de rastreio, a autorização ou o protocolo Jadlog + RE.'); return; }
+    if (!window.google || !google.script || !google.script.run) {
+      mostrarErro('Abra o painel pelo Apps Script (menu Correios › Abrir painel ou App da Web).');
+      return;
+    }
+    $('historicoCarregando').hidden = false;
+    $('historicoRastrear').disabled = true;
+    google.script.run
+      .withSuccessHandler(function (r) { if (pedido === estado.pedido) receber(r); })
+      .withFailureHandler(function (e) { if (pedido === estado.pedido) { pronto(); mostrarErro(e && e.message ? e.message : String(e)); } })
+      .historicoTracking({ codigo: codigo, autorizacao: codigo === estado.inicial ? estado.autorizacao : '' });
+  }
+
+  function pronto() {
+    $('historicoCarregando').hidden = true;
+    $('historicoRastrear').disabled = false;
+  }
+
+  function mostrarErro(texto) {
+    $('historicoErro').textContent = texto;
+    $('historicoErro').hidden = false;
+  }
+
+  function receber(r) {
+    pronto();
+    $('historicoAvisos').innerHTML = (r.avisos || []).map(function (a) {
+      return '<div class="aviso aviso-info">' + escapar(a) + '</div>';
+    }).join('');
+    if (r.erro) { mostrarErro(r.erro); return; }
+
+    var fonte = normalizar(r.fonte);
+    $('historicoRotuloCodigo').textContent = fonte.indexOf('reversa') >= 0 ? 'Autorização de postagem'
+      : fonte.indexOf('intelipost') >= 0 ? 'Pedido Jadlog' : 'Código de rastreio';
+    $('historicoCodigoTexto').textContent = r.codigo;
+    $('historicoFonte').textContent = 'Fonte: ' + r.fonte;
+    var classe = window.classeStatus(r.status);
+    var chip = $('historicoStatus');
+    chip.className = 'chip ' + classe;
+    chip.textContent = r.status || 'Sem status';
+    $('historicoAtualizado').textContent = r.atualizadoEm ? 'Última atualização: ' + r.atualizadoEm : '';
+
+    $('historicoEventos').innerHTML = (r.eventos || []).map(function (e, i) {
+      var linhas = '';
+      if (e.detalhe) linhas += '<div class="evento-detalhe">' + escapar(e.detalhe) + '</div>';
+      if (e.de) linhas += '<div class="evento-local">' + PINO + '<span><b>De:</b> ' + escapar(e.de) + '</span></div>';
+      if (e.para) linhas += '<div class="evento-local">' + BANDEIRA + '<span><b>Para:</b> ' + escapar(e.para) + '</span></div>';
+      if (e.local) linhas += '<div class="evento-local">' + PINO + '<span>' + escapar(e.local) + '</span></div>';
+      return '<li' + (i === 0 ? ' class="atual"' : '') + '>' +
+        '<div class="evento-marca' + (i === 0 ? ' ' + classe : '') + '">' + icone(e.titulo) + '</div>' +
+        '<div><div class="evento-titulo">' + escapar(e.titulo || '(sem descrição)') + '</div>' + linhas +
+        (e.dataHora ? '<div class="evento-data">' + escapar(e.dataHora) + '</div>' : '') + '</div></li>';
+    }).join('');
+    $('historicoResultado').hidden = false;
+    $('historicoCorpo').scrollTop = 0;
+  }
+
+  /* ---------- Eventos ---------- */
+
+  document.addEventListener('DOMContentLoaded', function () {
+    $('historicoForm').addEventListener('submit', function (e) {
+      e.preventDefault();
+      consultar($('historicoCodigo').value.trim());
+    });
+    document.querySelector('[data-fechar-historico]').addEventListener('click', fechar);
+    // clique no fundo escurecido (fora da janela) fecha
+    $('historicoFundo').addEventListener('click', function (e) { if (e.target === $('historicoFundo')) fechar(); });
+  });
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && !$('historicoFundo').hidden) fechar();
+  });
+
+  window.HistoricoTracking = { abrir: abrir, fechar: fechar };
+})();
+</script>

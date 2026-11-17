@@ -1,0 +1,17 @@
+<script>
+/*
+ * Cor do chip pelo significado do status (padrão visual), compartilhada pelas telas do painel:
+ * entregue = verde; não entregue/cancelado/expirado/desistência/erro = vermelho;
+ * rastreio expirado/aguardando/vazio = neutro; demais (em andamento) = laranja.
+ */
+window.classeStatus = function (s) {
+  var t = String(s == null ? '' : s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+  if (!t) return 'chip-neutro';
+  if (t.indexOf('erro') === 0) return 'chip-erro';
+  if (t.indexOf('rastreio expirado') >= 0) return 'chip-neutro';
+  if (t.indexOf('nao entregue') >= 0 || /cancelad|expirad|desistencia/.test(t)) return 'chip-erro';
+  if (t.indexOf('entregue') >= 0) return 'chip-sucesso';
+  if (/aguardando/.test(t)) return 'chip-neutro';
+  return 'chip-marca'; // em andamento (em transferência, saiu para entrega, postado, coletado…)
+};
+</script>
