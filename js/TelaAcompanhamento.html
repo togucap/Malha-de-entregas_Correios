@@ -20,6 +20,8 @@
   // códigos e identificadores em fonte mono
   var MONO = ['Protocolo', 'Pedido', 'Autorização Postagem', 'Código convertido', 'Pedido_Parceiro'];
   var VAZIO = '__vazio__';
+  // colunas Sim/Não em chip (Sim = verde, Não = neutro)
+  var SIM_NAO = ['Entrada_Lista', 'Assistencia_Tecnica'];
 
   var estado = { carregado: false, colunas: [], linhas: [], visao: 'aberto', pesquisando: false, filtradas: [], naOutraVisao: 0, limite: POR_PAGINA };
 
@@ -58,7 +60,8 @@
 
   function receber(d) {
     $('atualizarOut').disabled = false;
-    estado.colunas = d.colunas;
+    estado.colunas = d.colunas;          // nomes na base (usados para achar as colunas)
+    estado.rotulos = d.rotulos || d.colunas; // títulos do cabeçalho
     var busca = BUSCA.map(indice);
     estado.linhas = d.linhas.map(function (v, k) {
       return { v: v, finalizada: !!(d.finalizadas && d.finalizadas[k]), busca: normalizar(busca.map(function (i) { return v[i]; }).join(' ')) };
@@ -167,7 +170,7 @@
   /* ---------- Tabela ---------- */
 
   function montarCabecalho() {
-    $('tabelaOut').tHead.innerHTML = '<tr>' + estado.colunas.map(function (c) {
+    $('tabelaOut').tHead.innerHTML = '<tr>' + estado.rotulos.map(function (c) {
       return '<th scope="col">' + escapar(c) + '</th>';
     }).join('') + '<th scope="col" class="col-acoes">Histórico</th></tr>';
   }
@@ -200,7 +203,7 @@
     if (coluna === 'Status tracking') {
       return '<td>' + (valor ? '<span class="chip ' + window.classeStatus(valor) + '">' + escapar(valor) + '</span>' : '') + '</td>';
     }
-    if (coluna === 'Entrada_Lista' && valor) {
+    if (SIM_NAO.indexOf(coluna) >= 0 && valor) {
       return '<td><span class="chip ' + (normalizar(valor) === 'sim' ? 'chip-sucesso' : 'chip-neutro') + '">' + escapar(valor) + '</span></td>';
     }
     var classe = MONO.indexOf(coluna) >= 0 ? ' class="mono"' : /^Dt\.|^Data/.test(coluna) ? ' class="numero"' : '';
