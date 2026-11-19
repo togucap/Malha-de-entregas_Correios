@@ -23,6 +23,7 @@ function onOpen() {
     .addSeparator()
     .addItem('Importar protocolos do Drive', 'menuImportarProtocolos')
     .addItem('Cruzar com relatórios do Drive', 'menuCruzarRelatorios')
+    .addItem('Gerar Payload_Tracking (JSON)', 'menuGerarPayloadTracking')
     .addSeparator()
     .addItem('Abrir painel', 'abrirPainel')
     .addItem('Tela de teste das APIs', 'abrirTeste')
@@ -220,6 +221,13 @@ function atualizar_(reprocessar, automatico) {
   console.log(msg);
   if (proxima === null) {
     encerrarCiclo_();
+    // ciclo completo: atualiza o arquivo Payload_Tracking (falha aqui não desfaz a atualização)
+    try {
+      msg += ' ' + gerarPayloadTracking();
+    } catch (e) {
+      const motivo = String(e && e.message ? e.message : e).replace(/^Payload_Tracking:\s*/, '').replace(/\.$/, '');
+      msg += ' Payload_Tracking não gerado (' + motivo + ').';
+    }
     return msg;
   }
 

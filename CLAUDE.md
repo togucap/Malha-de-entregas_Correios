@@ -23,6 +23,7 @@ Pastas no GitHub: `gs/` (servidor), `html/` (páginas), `css/` e `js/` (estilos 
 - `Cruzamentos.gs` — lista `CRUZAMENTOS` (id, pasta, arquivo, chave da base, chave do relatório, chave composta com rastreio, exclusão de linhas de outro cruzamento, colunas trazidas ou de presença Sim/Não) e o botão de menu "Cruzar com relatórios do Drive", que executa todos na ordem da lista.
 - `Intelipost.gs` — consulta Jadlog via Web App proxy corporativo da Intelipost: lote (uma chamada por lote), consulta crua da tela de teste e amostra de protocolos da base.
 - `IntelipostParser.gs` — interpreta `{ sucesso, dados }` do proxy: eventos do `detalhes.historico` por pedido (com `descricao` e `estadoTraduzido`), último evento, cidade, previsão de entrega se o proxy enviar (`CAMPOS_PREVISAO_INTELIPOST`); `statusIntelipost_`.
+- `PayloadTracking.gs` — exportação JSON `Payload_Tracking` para outro projeto (ver seção própria): `gerarPayloadTracking`, menu "Gerar Payload_Tracking (JSON)".
 - `Historico.gs` — `historicoTracking({ codigo, autorizacao, protocolo })`: histórico completo de um objeto, consulta pontual da janela "Histórico" (ver seção própria).
 - `gs/Interface.gs` — páginas HtmlService: `doGet` (App da Web: painel; `?pagina=teste` = tela de teste), `abrirPainel` / `abrirTeste` (menu Correios), `include(nome)` para os modelos.
 - `gs/Acompanhamento.gs` — `dadosAcompanhamentoOut()` para a tela "Acompanhamento - OUT": linhas da aba base com `Parceiro_Nome` preenchido, 14 colunas, valores já em texto (datas `dd/MM/yyyy[ HH:mm]`; `Data Prevista Entrega` só `dd/MM/yyyy`; `Assistencia_Tecnica` como Sim/Não; números com todos os dígitos) e títulos da tela em `rotulos`.
@@ -60,6 +61,15 @@ Pastas no GitHub: `gs/` (servidor), `html/` (páginas), `css/` e `js/` (estilos 
   - Célula com vários códigos: consulta o primeiro e avisa os outros.
 - Resposta só com texto: `{ codigo, fonte, status (resumido como na planilha), atualizadoEm, eventos [{ titulo, detalhe, de, para, local, dataHora "dd/MM/yyyy, HH:mm:ss" }] (mais recente primeiro), previsao ("dd/MM/yyyy" ou ''), avisos, erro }`; a previsão aparece no cartão ("Previsão de entrega").
 - Tela (estrutura da referência): campo "Consultar objeto" + botão "Rastrear" (consulta outro código; a autorização da linha só vai junto enquanto o código for o da linha), nota de atenção, cartão com rótulo (Código de rastreio / Autorização de postagem / Pedido Jadlog), código grande em mono, chip de status e "Última atualização"; "Histórico de movimentação" em linha do tempo vertical (ícone por tipo de evento; o mais recente na cor do status), linhas "De:"/"Para:" (Rastro com `unidadeDestino`) ou o local, data em mono. Fecha com ×, clique fora ou Esc (foco volta ao botão da linha); resposta atrasada de consulta anterior é descartada.
+
+## Exportação `Payload_Tracking` (JSON para outro projeto)
+
+- `gs/PayloadTracking.gs` (`PAYLOAD_TRACKING`): arquivo `Payload_Tracking` (sem extensão, tipo `application/json`) na pasta `1Zk2F78…` do Drive (drive compartilhado, a mesma do `Consolidado_Anymarket_OUT`). **Sobrescrito** a cada geração (`setContent`, mesmo ID); se não existir, é criado; com mais de um de mesmo nome, usa o atualizado mais recentemente. Acima de ~9 MB grava pelo serviço avançado Drive API v3.
+- Gerado pelo menu "Gerar Payload_Tracking (JSON)" e no fim de cada ciclo **completo** da atualização de status (não nas execuções parciais); falha na geração não desfaz a atualização, só aparece no resumo.
+- Formato: `{ versao: 1, geradoEm: "AAAA-MM-DDTHH:mm:ss-03:00", totalPedidos, pedidos: { "<Pedido_Parceiro>": { status, dataOcorrencia, cidade, dataPrevista, autorizacao, assistencia, parceiro } } }`.
+  - Campos ← colunas: `status` ← Status tracking; `dataOcorrencia` ← Data Ocorrencia; `cidade` ← cidade ultima interação (só a cidade, a base não guarda a UF); `dataPrevista` ← Data Prevista Entrega; `autorizacao` ← Autorização Postagem; `assistencia` ← Assistencia_Tecnica como **"Sim"/"Não"** (o nome da assistência não vai); `parceiro` ← Parceiro_Nome.
+  - Datas `dd/MM/yyyy`; números como texto com todos os dígitos; vazio = `""` (nunca null).
+  - Só linhas com `Pedido_Parceiro`; Pedido_Parceiro repetido → fica a linha com a `Data Ocorrencia` mais recente (sem data nas duas, a mais abaixo na base). Coluna ausente vai vazia e é avisada no resumo.
 
 ## Configuração
 
