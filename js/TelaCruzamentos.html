@@ -1,0 +1,262 @@
+<script>
+/*
+ * Vista "Cruzamentos": painel de execuções. Lê statusExecucoes() (gs/StatusExecucoes) e acende as luzes.
+ * - Relê sozinho enquanto a vista estiver aberta e a aba do navegador visível:
+ *   a cada 10 s se algo estiver em andamento, senão a cada 60 s.
+ * - Botões chamam acaoPainel(acao) (gs/Cadeia): cadeia, tracking e relatórios entram na fila
+ *   (começam em ~1 min); o JSON é gerado na hora.
+ */
+(function () {
+  var VISTA = 'cruzamentos';
+  var RAPIDO = 10000, LENTO = 60000;
+
+  var ROTULOS = {
+    '': 'Sem registro', agendado: 'Na fila', executando: 'Em execução', aguardando: 'Aguardando continuação',
+    ok: 'Concluído', alerta: 'Atenção', erro: 'Erro', parado: 'Cancelado'
+  };
+  var CHIPS = {
+    '': 'chip-neutro', parado: 'chip-neutro', agendado: 'chip-info', executando: 'chip-marca', aguardando: 'chip-marca',
+    ok: 'chip-sucesso', alerta: 'chip-divergencia', erro: 'chip-erro'
+  };
+  var ORIGENS = { menu: 'pelo menu', gatilho: 'por acionador', cadeia: 'pela cadeia', painel: 'pelo painel', editor: 'pelo editor', tracking: 'no fim do tracking' };
+  var NOMES_ETAPA = { importacao: 'Protocolos', cruzamentos: 'Relatórios do Drive', tracking: 'Tracking', concluida: 'Concluída' };
+
+  var estado = { dados: null, espera: null, carregando: false, defasagem: 0, placa: null };
+
+  function $(id) { return document.getElementById(id); }
+  function visivel() { var v = document.querySelector('.vista[data-vista="' + VISTA + '"]'); return v && !v.hidden && !document.hidden; }
+  function numero(n) { return Number(n || 0).toLocaleString('pt-BR'); }
+  function luz(el, e) { el.setAttribute('data-estado', e || ''); }
+  function chip(el, e, texto) { el.className = 'chip ' + (CHIPS[e || ''] || 'chip-neutro'); el.textContent = texto || ROTULOS[e || ''] || e; }
+  function origem(o) { return o ? ORIGENS[o] || o : ''; }
+
+  // "há 12 min" pelo relógio do servidor (corrige a diferença com o relógio do navegador)
+  function ha(ms) {
+    if (!ms) return '';
+    var s = Math.max(0, Math.round((Date.now() + estado.defasagem - ms) / 1000));
+    if (s < 60) return 'agora';
+    var m = Math.round(s / 60);
+    if (m < 60) return 'há ' + m + ' min';
+    var h = Math.floor(m / 60);
+    if (h < 24) return 'há ' + h + ' h' + (m % 60 ? ' ' + (m % 60) + ' min' : '');
+    return 'há ' + Math.floor(h / 24) + ' dia(s)';
+  }
+  function quando(ms, texto) { return ms ? texto + ' (' + ha(ms) + ')' : '—'; }
+  function curto(texto) { return String(texto || '').slice(0, 16).replace(/^(\d{2}\/\d{2})\/\d{4}/, '$1'); } // "23/11 14:02"
+
+  /* ---------- Leitura ---------- */
+
+  function carregar() {
+    clearTimeout(estado.espera);
+    if (estado.carregando) return;
+    if (!window.google || !google.script || !google.script.run) {
+      avisar('Abra o painel pelo Apps Script (menu Correios › Abrir painel ou App da Web).', true);
+      return;
+    }
+    estado.carregando = true;
+    google.script.run.withSuccessHandler(receber).withFailureHandler(function (e) {
+      estado.carregando = false;
+      avisar('Não foi possível ler o status: ' + (e && e.message ? e.message : e), true);
+      agendar(LENTO);
+    }).statusExecucoes();
+  }
+
+  function agendar(ms) {
+    clearTimeout(estado.espera);
+    estado.espera = setTimeout(function () { if (visivel()) carregar(); }, ms);
+  }
+
+  function receber(d) {
+    estado.carregando = false;
+    estado.dados = d;
+    estado.defasagem = d.agora - Date.now();
+    desenhar();
+    agendar(d.emAndamento ? RAPIDO : LENTO);
+  }
+
+  function avisar(texto, erro) {
+    var a = $('avisoPainel');
+    a.textContent = texto;
+    a.className = 'aviso ' + (erro ? 'aviso-perigo' : 'aviso-info');
+    a.hidden = !texto;
+  }
+
+  /* ---------- Desenho ---------- */
+
+  function desenhar() {
+    var p = estado.dados.processos;
+    desenharGeral(p);
+    desenharCadeia(p);
+    desenharTracking(p.tracking);
+    desenharLuzes(p);
+    desenharAcionadores(estado.dados.acionadores);
+    $('painelLido').textContent = 'Status lido em ' + estado.dados.agoraTexto + ' · relê sozinho a cada ' +
+      (estado.dados.emAndamento ? '10 s (há execução em andamento)' : '1 min');
+  }
+
+  // luz grande: erro > em andamento > atenção > ok
+  function desenharGeral(p) {
+    var nomes = { importacao: 'Protocolos', cruzamentos: 'Relatórios do Drive', tracking: 'Tracking', json: 'Payload_Tracking', cadeia: 'Cadeia' };
+    var chaves = Object.keys(nomes);
+    var com = function (lista) { return chaves.filter(function (k) { return lista.indexOf(p[k].estado) >= 0; }); };
+    var erros = com(['erro']), andamento = com(['executando', 'aguardando', 'agendado']), alertas = com(['alerta']);
+    var e, titulo;
+    if (erros.length) { e = 'erro'; titulo = 'Erro em: ' + erros.map(function (k) { return nomes[k]; }).join(', '); }
+    else if (andamento.length) { e = 'executando'; titulo = 'Em andamento: ' + andamento.map(function (k) { return nomes[k]; }).join(', '); }
+    else if (alertas.length) { e = 'alerta'; titulo = 'Atenção em: ' + alertas.map(function (k) { return nomes[k]; }).join(', '); }
+    else if (p.tracking.ultimaConclusao) { e = 'ok'; titulo = 'Tudo em dia'; }
+    else { e = ''; titulo = 'Nenhuma execução registrada ainda'; }
+    luz($('geralLuz'), e);
+    $('geralTitulo').textContent = titulo;
+    $('geralTexto').textContent = p.tracking.ultimaConclusao
+      ? 'Tracking atualizado em ' + p.tracking.ultimaConclusaoTexto + ' (' + ha(p.tracking.ultimaConclusao) + ')'
+      : 'O tracking ainda não terminou nenhum ciclo com o painel ativo.';
+  }
+
+  function desenharCadeia(p) {
+    var c = p.cadeia;
+    var andamento = c.estado === 'executando';
+    document.querySelectorAll('#cadeiaEtapas .estacao').forEach(function (li) {
+      var etapa = li.getAttribute('data-etapa');
+      var s = p[etapa] || {};
+      luz(li.querySelector('.luz'), s.estado);
+      li.querySelector('.estacao-estado').textContent = ROTULOS[s.estado || ''] || s.estado;
+      li.querySelector('.estacao-hora').textContent = curto(s.fimTexto || s.execucaoFimTexto || s.inicioTexto || '');
+      // o JSON não é etapa própria da cadeia: é gerado no fim do tracking
+      li.classList.toggle('atual', andamento && c.etapa === etapa);
+      li.title = s.mensagem || '';
+    });
+    chip($('cadeiaChip'), c.estado, c.estado === 'executando' ? 'Em andamento · ' + (NOMES_ETAPA[c.etapa] || c.etapa) : null);
+    $('cadeiaInfo').textContent = c.inicio
+      ? 'Última cadeia: iniciada em ' + c.inicioTexto + ' ' + origem(c.origem) +
+        (c.fim ? ', terminada em ' + c.fimTexto : '') + '. ' + (c.mensagem || '')
+      : 'Nenhuma cadeia executada ainda. Ela começa pelo botão "Executar cadeia completa", pelo menu Correios › "Importar protocolos e atualizar tudo" ou por um acionador de executarCadeiaCompleta.';
+  }
+
+  function desenharTracking(t) {
+    luz($('trackingLuz'), t.estado);
+    chip($('trackingChip'), t.estado, t.estado === 'alerta' && t.proxima ? 'Nova tentativa agendada' : null);
+
+    var prog = t.progresso || { feitas: 0, restantes: 0 };
+    var total = (prog.feitas || 0) + (prog.restantes || 0);
+    var pct = total ? Math.round(prog.feitas / total * 100) : (t.estado === 'ok' ? 100 : 0);
+    var barra = $('trackingBarra');
+    barra.style.width = pct + '%';
+    barra.classList.toggle('concluido', t.estado === 'ok');
+    $('trackingContagem').textContent = total
+      ? numero(prog.feitas) + ' de ' + numero(total) + ' linha(s) consultada(s) no ciclo'
+      : (t.estado ? 'Nenhuma linha pendente no ciclo' : 'Sem ciclo registrado');
+    $('trackingPct').textContent = total ? pct + '%' : '';
+
+    $('trackingConclusao').textContent = quando(t.ultimaConclusao, t.ultimaConclusaoTexto);
+    $('trackingCiclo').textContent = t.ciclo && t.ciclo.inicio
+      ? 'Iniciado em ' + t.ciclo.inicioTexto + ' ' + origem(t.ciclo.origem) + (t.ciclo.reprocessar ? ' (reprocessar todas)' : '')
+      : '—';
+    $('trackingExecucao').textContent = t.execucaoFim ? 'Terminou ' + ha(t.execucaoFim) + ' (' + curto(t.execucaoFimTexto) + ')'
+      : t.execucaoInicio ? 'Começou ' + ha(t.execucaoInicio) : '—';
+    $('trackingProxima').textContent = t.proxima ? '~' + t.proximaTexto.slice(11) : '—';
+    $('trackingMensagem').textContent = t.mensagem || '';
+  }
+
+  // placas: protocolos, cada relatório dos cruzamentos, tracking e o JSON de saída
+  function desenharLuzes(p) {
+    // rotulo = plaqueta curta; arquivo = nome completo (dica e detalhe)
+    var placas = [{ id: 'importacao', rotulo: 'Protocolos', arquivo: p.importacao.arquivo || 'Consolidado_Protocolos', s: p.importacao }];
+    (p.cruzamentos.lista || []).forEach(function (r) {
+      placas.push({ id: 'rel-' + r.id, rotulo: r.rotulo || r.arquivo, arquivo: r.arquivo, s: r });
+    });
+    placas.push({ id: 'tracking', rotulo: 'Tracking', arquivo: 'Reversa, Rastro e Intelipost', s: p.tracking });
+    placas.push({ id: 'json', rotulo: 'Payload JSON', arquivo: (p.json.arquivo || 'Payload_Tracking') + ' (arquivo gerado)', s: p.json });
+
+    var conta = { erro: 0, andamento: 0, ok: 0 };
+    (p.cruzamentos.lista || []).forEach(function (r) {
+      if (r.estado === 'erro') conta.erro++;
+      else if (['executando', 'aguardando', 'agendado'].indexOf(r.estado) >= 0) conta.andamento++;
+      else if (r.estado === 'ok') conta.ok++;
+    });
+    chip($('relatoriosChip'), p.cruzamentos.estado,
+      p.cruzamentos.fim ? 'Última rodada ' + curto(p.cruzamentos.fimTexto) : null);
+
+    $('painelLuzes').innerHTML = placas.map(function (pl) {
+      var s = pl.s || {};
+      var e = s.estado || '';
+      var detalhe = e === 'aguardando' && s.progresso ? s.progresso + '% lido' : ROTULOS[e] || e;
+      var hora = curto(s.fimTexto || s.execucaoFimTexto || '');
+      return '<button type="button" class="placa" role="listitem" data-placa="' + pl.id + '" aria-pressed="' + (estado.placa === pl.id) + '" title="' + escapar(pl.arquivo + (s.mensagem ? ': ' + s.mensagem : '')) + '">' +
+        '<span class="placa-rotulo">' + escapar(pl.rotulo) + '</span>' +
+        '<span class="luz luz-g" data-estado="' + e + '"></span>' +
+        '<span class="placa-estado">' + escapar(detalhe) + '</span>' +
+        '<span class="placa-hora">' + escapar(hora) + '</span></button>';
+    }).join('');
+    estado.placas = placas;
+    mostrarDetalhe();
+  }
+
+  function mostrarDetalhe() {
+    var pl = (estado.placas || []).filter(function (x) { return x.id === estado.placa; })[0];
+    $('placaDetalhe').hidden = !pl;
+    if (!pl) return;
+    var s = pl.s || {};
+    $('placaDetalheTitulo').textContent = pl.arquivo + ' · ' + (ROTULOS[s.estado || ''] || s.estado) +
+      (s.fimTexto ? ' · ' + s.fimTexto : '') + (s.origem ? ' · ' + origem(s.origem) : '');
+    $('placaDetalheTexto').textContent = s.mensagem || 'Sem execução registrada.';
+  }
+
+  function desenharAcionadores(lista) {
+    var ul = $('listaAcionadores');
+    if (!lista || !lista.length) {
+      ul.innerHTML = '<li><span class="texto-apoio">Nenhum acionador no projeto (para a conta que abriu o painel).</span></li>';
+      return;
+    }
+    ul.innerHTML = lista.map(function (a) {
+      var tipo = a.tipo === 'CLOCK' ? 'tempo' : a.tipo === 'ON_OPEN' ? 'ao abrir' : a.tipo.toLowerCase();
+      return '<li><span>' + escapar(a.rotulo) + '</span><span class="qtd">' + escapar(tipo) + (a.qtd > 1 ? ' ×' + a.qtd : '') + '</span></li>';
+    }).join('');
+  }
+
+  function escapar(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  /* ---------- Ações ---------- */
+
+  function executar(acao, botao) {
+    if (!window.google || !google.script || !google.script.run) return;
+    document.querySelectorAll('[data-acao-painel]').forEach(function (b) { b.disabled = true; });
+    avisar(acao === 'json' ? 'Gerando o Payload_Tracking…' : 'Enviando o pedido…');
+    var pronto = function () { document.querySelectorAll('[data-acao-painel]').forEach(function (b) { b.disabled = false; }); };
+    google.script.run.withSuccessHandler(function (msg) {
+      pronto();
+      avisar(msg);
+      carregar();
+    }).withFailureHandler(function (e) {
+      pronto();
+      avisar(e && e.message ? e.message : String(e), true);
+      carregar();
+    }).acaoPainel(acao);
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('[data-acao-painel]').forEach(function (b) {
+      b.addEventListener('click', function () { executar(b.getAttribute('data-acao-painel'), b); });
+    });
+    $('recarregarPainel').addEventListener('click', carregar);
+    $('painelLuzes').addEventListener('click', function (e) {
+      var b = e.target.closest('[data-placa]');
+      if (!b) return;
+      var id = b.getAttribute('data-placa');
+      estado.placa = estado.placa === id ? null : id;
+      document.querySelectorAll('#painelLuzes [data-placa]').forEach(function (x) {
+        x.setAttribute('aria-pressed', String(x.getAttribute('data-placa') === estado.placa));
+      });
+      mostrarDetalhe();
+    });
+  });
+
+  // lê ao abrir a vista e ao voltar para a aba do navegador
+  document.addEventListener('vistamostrada', function (e) { if (e.detail === VISTA) carregar(); });
+  document.addEventListener('visibilitychange', function () { if (visivel()) carregar(); });
+})();
+</script>

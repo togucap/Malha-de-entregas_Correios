@@ -20,25 +20,43 @@ const IMPORTACAO_PROTOCOLOS = {
     'Autorização Postagem', 'Tipo da Solicitação', 'Tipo abertura']
 };
 
+// Menu: importa e dispara a cadeia (relatórios do Drive -> tracking -> Payload_Tracking), ver Cadeia.gs
 function menuImportarProtocolos() {
   const ss = SpreadsheetApp.getActive();
   ss.toast('Importando protocolos do relatório consolidado...', 'Correios', 10);
   try {
-    ss.toast(importarProtocolos(), 'Correios', 60);
+    ss.toast(executarCadeiaCompleta('menu'), 'Correios', 60);
   } catch (e) {
-    ss.toast(String(e && e.message ? e.message : e), 'Correios – erro', 60);
+    ss.toast(mensagemErro_(e), 'Correios – erro', 60);
   }
 }
 
+// Só a importação, sem a cadeia (para uso no editor)
 function importarProtocolos() {
+  return executarImportacao_('editor').msg;
+}
+
+/**
+ * Importação com lock e registro no painel de execuções. Devolve { ok, msg };
+ * ok = false quando não rodou (lock ocupado, cruzamentos em andamento) ou deu erro (base não mudou).
+ */
+function executarImportacao_(origem) {
   const lock = LockService.getScriptLock();
-  if (!lock.tryLock(1000)) return 'Há uma atualização em andamento. Tente novamente em alguns minutos.';
+  if (!lock.tryLock(1000)) return { ok: false, msg: MSG_OCUPADO };
   try {
     // as linhas mudam de posição: não dá para importar no meio de uma rodada de cruzamentos (que guarda posições)
     if (PropertiesService.getScriptProperties().getProperty(CRUZ_ESTADO_PROP)) {
-      return 'Há uma rodada de cruzamentos em andamento. Aguarde terminar ou use "Cancelar continuação automática".';
+      return { ok: false, msg: 'Há uma rodada de cruzamentos em andamento. Aguarde terminar ou use "Cancelar continuação automática".' };
     }
-    return importar_();
+    gravarStatus_('importacao', { estado: 'executando', inicio: Date.now(), fim: null, origem: origem, mensagem: 'Lendo ' + IMPORTACAO_PROTOCOLOS.arquivo + '.' });
+    try {
+      const msg = importar_();
+      gravarStatus_('importacao', { estado: 'ok', fim: Date.now(), mensagem: msg });
+      return { ok: true, msg: msg };
+    } catch (e) {
+      gravarStatus_('importacao', { estado: 'erro', fim: Date.now(), mensagem: mensagemErro_(e) });
+      return { ok: false, msg: 'Erro: ' + mensagemErro_(e) };
+    }
   } finally {
     lock.releaseLock();
   }

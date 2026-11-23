@@ -4,6 +4,7 @@
  *
  * Cada item:
  *   id                 nome interno (usado por ignorarLinhasDe)
+ *   rotulo             nome curto na plaqueta do painel de execuções
  *   pasta, arquivo, aba  ID da pasta no Drive, nome do arquivo (com ou sem extensão), aba (vazio = primeira)
  *   chaveBase / chaveRelatorio  colunas comparadas
  *   rastreioRelatorio  (opcional) coluna do relatório com o código de rastreio: a chave passa a ser
@@ -34,6 +35,7 @@
 const CRUZAMENTOS = [
   {
     id: 'parceiros',
+    rotulo: 'Anymarket OUT',
     pasta: '1Zk2F78ImtNqEDF_pULHe-74qwxaMH2xe',
     arquivo: 'Consolidado_Anymarket_OUT', // "_OUT" = parceiros externos; acha .xlsx ou .csv
     aba: '',
@@ -46,6 +48,7 @@ const CRUZAMENTOS = [
   },
   {
     id: 'ordemServico',
+    rotulo: 'Ordem de serviço',
     pasta: '15e1QbjoUii-tvNa180pwRcAKJTyxQlkP',
     arquivo: 'Relatorio Ordem de Serviço - Consolidado',
     aba: '',
@@ -56,6 +59,7 @@ const CRUZAMENTOS = [
   },
   {
     id: 'listaMspc',
+    rotulo: 'Lista MSPC',
     pasta: '12d0yusktFNnojVKtxlLHGXGUiE-7ivNc',
     arquivo: 'Lista MSPC', // entradas de produtos no estoque
     aba: '',
@@ -76,22 +80,52 @@ function menuCruzarRelatorios() {
   const ss = SpreadsheetApp.getActive();
   ss.toast('Cruzando a base com os relatórios do Drive...', 'Correios', 10);
   try {
-    ss.toast(cruzarRelatorios(), 'Correios', 60);
+    ss.toast(iniciarCruzamentos_('menu'), 'Correios', 60);
   } catch (e) {
     ss.toast(String(e && e.message ? e.message : e), 'Correios – erro', 60);
   }
 }
 
-// Começa os cruzamentos do primeiro item (descarta uma rodada anterior não concluída)
 function cruzarRelatorios() {
+  return iniciarCruzamentos_('editor');
+}
+
+/**
+ * Começa os cruzamentos do primeiro item (descarta uma rodada anterior não concluída).
+ * origem (painel de execuções): 'menu' | 'cadeia' | 'painel' | 'editor'.
+ */
+function iniciarCruzamentos_(origem) {
   const lock = LockService.getScriptLock();
-  if (!lock.tryLock(1000)) return 'Há uma atualização em andamento. Tente novamente em alguns minutos.';
+  if (!lock.tryLock(1000)) return MSG_OCUPADO;
   try {
     limparEstadoCruzamentos_();
+    const relatorios = {};
+    CRUZAMENTOS.forEach(function (c) { relatorios[c.id] = { estado: 'agendado', mensagem: 'Na fila.' }; });
+    gravarStatus_('cruzamentos', { estado: 'executando', inicio: Date.now(), fim: null, origem: origem, proxima: null,
+      relatorios: relatorios, mensagem: 'Rodada iniciada.' });
     return executarCruzamentos_({ etapa: 0, resultados: [], csv: null });
+  } catch (e) {
+    erroCruzamentos_(e);
+    throw e;
   } finally {
     lock.releaseLock();
   }
+}
+
+// Rodada interrompida por erro: registra no painel e deixa a cadeia seguir para o tracking
+function erroCruzamentos_(e) {
+  gravarStatus_('cruzamentos', { estado: 'erro', fim: Date.now(), proxima: null, mensagem: mensagemErro_(e) });
+  avancarCadeia_('cruzamentos', 'Relatórios do Drive: ' + mensagemErro_(e));
+}
+
+// Situação de um relatório no painel (mescla no registro da rodada)
+function statusRelatorio_(id, mudancas) {
+  const s = lerStatus_('cruzamentos');
+  const relatorios = s.relatorios || {};
+  const r = relatorios[id] || {};
+  Object.keys(mudancas).forEach(function (k) { r[k] = mudancas[k]; });
+  relatorios[id] = r;
+  gravarStatus_('cruzamentos', { relatorios: relatorios });
 }
 
 // Disparada pelos gatilhos de uso único agendados por executarCruzamentos_
@@ -106,6 +140,9 @@ function continuarCruzamentos(e) {
     const texto = PropertiesService.getScriptProperties().getProperty(CRUZ_ESTADO_PROP);
     if (!texto) return;
     console.log(executarCruzamentos_(JSON.parse(texto)));
+  } catch (e) {
+    erroCruzamentos_(e);
+    throw e;
   } finally {
     lock.releaseLock();
   }
@@ -130,15 +167,21 @@ function executarCruzamentos_(estado) {
   // rede de segurança: se o Apps Script encerrar esta execução à força, retoma do último ponto salvo
   salvarEstadoCruzamentos_(estado);
   agendarGatilho_(FUNCAO_CONTINUAR_CRUZAMENTOS, cfg.ESPERA_SEGURANCA_MS);
+  gravarStatus_('cruzamentos', { estado: 'executando', proxima: null });
+  const espera = function (texto) {
+    gravarStatus_('cruzamentos', { estado: 'aguardando', proxima: Date.now() + cfg.ESPERA_CONTINUACAO_MS, mensagem: texto });
+    return texto;
+  };
 
   while (estado.etapa < CRUZAMENTOS.length) {
     const c = CRUZAMENTOS[estado.etapa];
+    statusRelatorio_(c.id, { estado: 'executando', mensagem: estado.csv ? 'Continuando a leitura.' : 'Lendo o relatório.' });
     let r;
     try {
       r = executarEtapaCruzamento_(aba, c, prazo, estado.csv);
     } catch (e) {
       apagarBits_(c.id);
-      r = { concluida: true, msg: c.arquivo + ': ERRO – ' + (e && e.message ? e.message : e) };
+      r = { concluida: true, erro: true, msg: c.arquivo + ': ERRO – ' + mensagemErro_(e) };
     }
 
     estado.semAvanco = 0;
@@ -146,24 +189,29 @@ function executarCruzamentos_(estado) {
       estado.csv = r.retomada;
       salvarEstadoCruzamentos_(estado);
       agendarGatilho_(FUNCAO_CONTINUAR_CRUZAMENTOS, cfg.ESPERA_CONTINUACAO_MS);
-      return estado.resultados.concat(c.arquivo + ': ' + r.progresso + '% lido').join(' | ') +
-        ' | Continua sozinho em ~1 min; o resultado final fica na nota do cabeçalho "' + c.chaveBase + '".';
+      statusRelatorio_(c.id, { estado: 'aguardando', progresso: r.progresso, mensagem: r.progresso + '% lido; continua em ~1 min.' });
+      return espera(estado.resultados.concat(c.arquivo + ': ' + r.progresso + '% lido').join(' | ') +
+        ' | Continua sozinho em ~1 min; o resultado final fica na nota do cabeçalho "' + c.chaveBase + '".');
     }
 
+    statusRelatorio_(c.id, { estado: r.erro ? 'erro' : 'ok', progresso: null, fim: Date.now(), mensagem: r.msg });
     estado.resultados.push(r.msg);
+    if (r.erro) estado.erros = (estado.erros || 0) + 1;
     estado.csv = null;
     estado.etapa++;
     // próximo relatório só nesta execução se ainda sobrar bastante tempo (xlsx/planilha não podem ser pausados)
     if (estado.etapa < CRUZAMENTOS.length && Date.now() - inicio > cfg.TEMPO_MAXIMO_MS / 3) {
       salvarEstadoCruzamentos_(estado);
       agendarGatilho_(FUNCAO_CONTINUAR_CRUZAMENTOS, cfg.ESPERA_CONTINUACAO_MS);
-      return estado.resultados.join(' | ') + ' | Continua sozinho em ~1 min com "' + CRUZAMENTOS[estado.etapa].arquivo + '".';
+      return espera(estado.resultados.join(' | ') + ' | Continua sozinho em ~1 min com "' + CRUZAMENTOS[estado.etapa].arquivo + '".');
     }
   }
 
   const msg = estado.resultados.join(' | ');
   registrarResultadoCruzamentos_(aba, msg);
   limparEstadoCruzamentos_();
+  gravarStatus_('cruzamentos', { estado: estado.erros ? 'alerta' : 'ok', fim: Date.now(), proxima: null, mensagem: msg });
+  avancarCadeia_('cruzamentos', estado.erros ? estado.erros + ' relatório(s) com erro' : null);
   return msg;
 }
 

@@ -43,17 +43,34 @@ const PAYLOAD_TRACKING = {
 function menuGerarPayloadTracking() {
   const ss = SpreadsheetApp.getActive();
   try {
-    ss.toast(gerarPayloadTracking(), 'Correios', 20);
+    ss.toast(gerarPayloadTracking('menu'), 'Correios', 20);
   } catch (e) {
     ss.toast(String(e && e.message ? e.message : e), 'Correios – erro', 60);
   }
 }
 
 /**
- * Lê a aba base, monta o JSON e sobrescreve o arquivo na pasta (cria se não existir).
- * Devolve o resumo para o toast/registro.
+ * Gera o arquivo e registra no painel de execuções. origem: 'menu' | 'tracking' | 'painel' | gatilho.
+ * Devolve o resumo; em erro, registra e repassa o erro.
  */
-function gerarPayloadTracking() {
+function gerarPayloadTracking(origem) {
+  const o = typeof origem === 'string' ? origem : 'gatilho';
+  gravarStatus_('json', { estado: 'executando', inicio: Date.now(), fim: null, origem: o, mensagem: 'Gerando o arquivo.' });
+  try {
+    const r = gerarPayloadTracking_();
+    gravarStatus_('json', { estado: r.faltando.length ? 'alerta' : 'ok', fim: Date.now(), totalPedidos: r.quantidade, mensagem: r.msg });
+    return r.msg;
+  } catch (e) {
+    gravarStatus_('json', { estado: 'erro', fim: Date.now(), mensagem: mensagemErro_(e) });
+    throw e;
+  }
+}
+
+/**
+ * Lê a aba base, monta o JSON e sobrescreve o arquivo na pasta (cria se não existir).
+ * Devolve { msg, quantidade, faltando }.
+ */
+function gerarPayloadTracking_() {
   const cfg = PAYLOAD_TRACKING;
   const aba = obterAba_();
   const fuso = aba.getParent().getSpreadsheetTimeZone();
@@ -113,7 +130,7 @@ function gerarPayloadTracking() {
     (repetidos ? ' (' + repetidos + ' linha(s) com Pedido_Parceiro repetido; ficou a mais recente)' : '') +
     (faltando.length ? '. Colunas não encontradas (vão vazias): ' + faltando.join(', ') : '') + '.';
   console.log(msg);
-  return msg;
+  return { msg: msg, quantidade: quantidade, faltando: faltando };
 }
 
 // Sobrescreve o arquivo de mesmo nome na pasta (mantém o ID); se não existir, cria

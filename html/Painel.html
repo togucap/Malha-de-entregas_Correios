@@ -13,6 +13,7 @@
   <?!= include('EstiloFiltroMultiplo'); ?>
   <?!= include('EstiloAcompanhamento'); ?>
   <?!= include('EstiloHistorico'); ?>
+  <?!= include('EstiloCruzamentos'); ?>
   <?!= include('Tema'); ?>
 </head>
 <body>
@@ -45,7 +46,7 @@
         <svg class="icone" viewBox="0 0 24 24" aria-hidden="true"><path d="M1 3h15v13H1z"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
         <span class="nav-texto">Rastreio</span>
       </button>
-      <button class="nav-item" data-vista="cruzamentos" data-titulo="Cruzamentos" data-subtitulo="Relatórios do Drive cruzados com a base">
+      <button class="nav-item" data-vista="cruzamentos" data-titulo="Cruzamentos" data-subtitulo="Painel de execuções: protocolos, relatórios do Drive, tracking e Payload_Tracking">
         <svg class="icone" viewBox="0 0 24 24" aria-hidden="true"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M6 21V9a9 9 0 0 0 9 9"/></svg>
         <span class="nav-texto">Cruzamentos</span>
       </button>
@@ -100,13 +101,7 @@
       </div>
     </section>
 
-    <section class="vista" data-vista="cruzamentos" hidden>
-      <div class="card-container vazio">
-        <div class="vazio-icone"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M6 21V9a9 9 0 0 0 9 9"/></svg></div>
-        <div class="vazio-titulo">Cruzamentos em construção</div>
-        <div class="vazio-texto">O resultado dos cruzamentos com os relatórios do Drive aparecerá aqui.</div>
-      </div>
-    </section>
+    <?!= include('VistaCruzamentos'); ?>
 
     <section class="vista" data-vista="configuracoes" hidden>
       <div class="card-container vazio">
@@ -123,6 +118,7 @@
   <?!= include('FiltroMultiplo'); ?>
   <?!= include('HistoricoTracking'); ?>
   <?!= include('TelaAcompanhamento'); ?>
+  <?!= include('TelaCruzamentos'); ?>
   <?!= include('Navegacao'); ?>
 </body>
 </html>

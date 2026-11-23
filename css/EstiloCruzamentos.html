@@ -1,0 +1,174 @@
+<style>
+/*
+ * Vista "Cruzamentos": painel de execuções com luzes de estado. Só tokens.
+ * A luz é a única peça com brilho (box-shadow colorido): ela representa uma lâmpada acesa.
+ */
+
+/* ---------- Luz ---------- */
+
+.luz {
+  --luz-cor: var(--bg-elevated);   /* apagada */
+  --luz-brilho: transparent;
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  border: 3px solid var(--border-strong);           /* aro */
+  background: var(--luz-cor);
+  box-shadow: inset 0 0 0 2px var(--bg-subtle), 0 0 12px 1px var(--luz-brilho);
+  transition: background 0.3s, box-shadow 0.3s;
+}
+
+.luz-g { width: 40px; height: 40px; border-width: 4px; box-shadow: inset 0 0 0 3px var(--bg-subtle), 0 0 18px 2px var(--luz-brilho); }
+.luz-p { width: 14px; height: 14px; border-width: 2px; box-shadow: inset 0 0 0 1px var(--bg-subtle), 0 0 6px 0 var(--luz-brilho); }
+
+.luz[data-estado="ok"] { --luz-cor: var(--emerald); --luz-brilho: var(--emerald); }
+.luz[data-estado="executando"] { --luz-cor: var(--brand-accent); --luz-brilho: var(--brand-accent); animation: luz-pulso 1.2s ease-in-out infinite; }
+.luz[data-estado="aguardando"] { --luz-cor: var(--brand-accent); --luz-brilho: transparent; animation: luz-espera 2.4s ease-in-out infinite; }
+.luz[data-estado="agendado"] { --luz-cor: var(--blue); --luz-brilho: var(--blue); }
+.luz[data-estado="alerta"] { --luz-cor: var(--violet); --luz-brilho: var(--violet); }
+.luz[data-estado="erro"] { --luz-cor: var(--red-alert); --luz-brilho: var(--red-alert); }
+
+@keyframes luz-pulso { 50% { opacity: 0.55; } }
+@keyframes luz-espera { 50% { opacity: 0.7; } }
+@media (prefers-reduced-motion: reduce) { .luz { animation: none !important; } }
+
+/* ---------- Topo: estado geral e ações ---------- */
+
+.painel-topo { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; }
+.painel-geral { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.painel-geral-titulo { font-size: 17px; font-weight: 600; }
+.painel-geral-texto { font-size: 13px; margin-top: 2px; }
+.painel-acoes { display: flex; flex-wrap: wrap; gap: 8px; }
+
+#avisoPainel { margin-bottom: 16px; }
+
+.painel-cabecalho { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 8px 12px; margin-bottom: 16px; }
+.painel-cabecalho > div:first-child { flex: 1 1 220px; min-width: 0; }
+.painel-cabecalho .chip { display: inline-block; max-width: 100%; line-height: 22px; overflow: hidden; text-overflow: ellipsis; }
+.painel-titulo-luz { display: flex; align-items: center; gap: 12px; }
+.painel-nota { font-size: 12px; margin: 12px 0 0; }
+.painel-mensagem { font-size: 13px; color: var(--text-support); margin: 12px 0 0; overflow-wrap: anywhere; }
+
+/* ---------- Cadeia: estações ligadas por um traço ---------- */
+
+.cadeia { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+
+.estacao { position: relative; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 4px; padding: 0 8px; }
+.estacao .luz { width: 30px; height: 30px; position: relative; z-index: 1; margin-bottom: 4px; }
+
+/* traço da estação anterior até esta (atrás das luzes) */
+.estacao:not(:first-child)::before {
+  content: '';
+  position: absolute;
+  top: 14px;
+  right: 50%;
+  width: 100%;
+  height: 2px;
+  background: var(--border-color);
+}
+
+.estacao-nome { font-weight: 600; font-size: 14px; }
+.estacao-estado { font-size: 12px; color: var(--text-support); }
+.estacao-hora { font-family: 'IBM Plex Mono', monospace; font-weight: 600; font-size: 12px; color: var(--text-support); font-variant-numeric: tabular-nums; }
+.estacao.atual .estacao-nome { color: var(--brand-accent); }
+.estacao.atual .estacao-estado::before { content: 'Etapa atual · '; color: var(--brand-accent); font-weight: 600; }
+
+/* ---------- Tracking e painel de luzes lado a lado ---------- */
+
+.painel-grade { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+.painel-grade > .card-container { margin-bottom: 16px; }
+
+.tracking-progresso { display: flex; flex-direction: column; gap: 6px; }
+.tracking-numeros { display: flex; justify-content: space-between; font-size: 13px; color: var(--text-support); }
+
+.painel-dados { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 16px; margin: 16px 0 0; }
+.painel-dados dt { font-size: 12px; color: var(--text-support); }
+.painel-dados dd { margin: 2px 0 0; font-size: 14px; font-variant-numeric: tabular-nums; }
+
+/* painel de luzes: uma placa por relatório */
+.painel-luzes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: var(--bg-subtle);
+}
+
+.placa {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 8px;
+  min-width: 0;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text-main);
+  font: inherit;
+  cursor: pointer;
+  text-align: center;
+}
+
+.placa:hover { background: var(--bg-elevated); }
+.placa[aria-pressed="true"] { border-color: var(--brand-accent); background: var(--bg-card); }
+.placa:focus-visible { outline: 2px solid var(--brand-accent); outline-offset: 2px; }
+
+/* plaqueta com o nome, como a etiqueta acima de cada lâmpada */
+.placa-rotulo {
+  max-width: 100%;
+  padding: 2px 8px;
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  font-family: 'IBM Plex Mono', monospace;
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-support);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.placa-estado { font-size: 13px; font-weight: 500; }
+.placa-hora { font-family: 'IBM Plex Mono', monospace; font-weight: 600; font-size: 11px; color: var(--text-support); min-height: 14px; }
+
+.placa-detalhe { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-color); }
+.placa-detalhe-titulo { font-weight: 600; font-size: 13px; }
+.placa-detalhe .painel-mensagem { margin-top: 4px; }
+
+/* ---------- Rodapé: legenda e acionadores ---------- */
+
+.painel-rodape { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 24px; }
+.legenda-luzes, .lista-acionadores { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
+.legenda-luzes li { display: flex; align-items: center; gap: 10px; }
+.lista-acionadores li { display: flex; justify-content: space-between; gap: 12px; padding: 6px 10px; border-radius: 8px; background: var(--bg-subtle); }
+.lista-acionadores .qtd { color: var(--text-support); white-space: nowrap; }
+.painel-nota code { font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: var(--text-main); }
+
+/* ---------- Responsivo ---------- */
+
+@media (max-width: 1100px) {
+  .painel-grade, .painel-rodape { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 700px) {
+  /* cadeia na vertical, traço à esquerda */
+  .cadeia { grid-template-columns: 1fr; gap: 14px; }
+  .estacao { display: grid; grid-template-columns: 30px minmax(0, 1fr); grid-template-areas: "luz nome" "luz estado" "luz hora"; column-gap: 12px; row-gap: 0; text-align: left; align-items: start; padding: 0; }
+  .estacao .luz { grid-area: luz; margin: 0; }
+  .estacao-nome { grid-area: nome; } .estacao-estado { grid-area: estado; } .estacao-hora { grid-area: hora; }
+  .estacao:not(:first-child)::before { top: -14px; left: 14px; right: auto; width: 2px; height: 14px; }
+  .painel-dados { grid-template-columns: 1fr; }
+  .painel-luzes { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 8px; }
+  .placa { padding: 10px 4px; }
+  .placa-rotulo { font-size: 10px; letter-spacing: 0; padding: 2px 6px; }
+  .painel-acoes { width: 100%; }
+  .painel-acoes .btn-brand { flex: 1 1 100%; }
+  .painel-acoes .btn-secundario { flex: 1 1 auto; }
+}
+</style>

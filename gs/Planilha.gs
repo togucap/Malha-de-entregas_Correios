@@ -21,7 +21,7 @@ function onOpen() {
     .addItem('Reprocessar todas (inclusive finalizadas)', 'menuReprocessarAutorizacoes')
     .addItem('Cancelar continuação automática', 'menuCancelarContinuacao')
     .addSeparator()
-    .addItem('Importar protocolos do Drive', 'menuImportarProtocolos')
+    .addItem('Importar protocolos e atualizar tudo (relatórios → tracking → JSON)', 'menuImportarProtocolos')
     .addItem('Cruzar com relatórios do Drive', 'menuCruzarRelatorios')
     .addItem('Gerar Payload_Tracking (JSON)', 'menuGerarPayloadTracking')
     .addSeparator()
@@ -54,10 +54,11 @@ function menuCancelarContinuacao() {
   try {
     encerrarCiclo_();
     limparEstadoCruzamentos_();
+    cancelarCadeia_();
   } finally {
     lock.releaseLock();
   }
-  ss.toast('Continuações automáticas canceladas (atualização e cruzamentos). A próxima execução começa do início.', 'Correios', 15);
+  ss.toast('Continuações automáticas canceladas (atualização, relatórios e cadeia). A próxima execução começa do início.', 'Correios', 15);
 }
 
 /**
@@ -69,7 +70,9 @@ function menuCancelarContinuacao() {
  * Pode ser chamada por gatilho de tempo (o objeto do evento é ignorado).
  */
 function atualizarAutorizacoes(reprocessar) {
-  return executarComLock_(reprocessar === true, false);
+  // chamada por gatilho de tempo recebe o objeto do evento: não é "reprocessar"
+  const origem = reprocessar && typeof reprocessar === 'object' ? 'gatilho' : 'menu';
+  return executarComLock_(reprocessar === true, false, origem);
 }
 
 // Disparada pelos gatilhos de uso único agendados por atualizar_
@@ -84,23 +87,30 @@ function continuarAtualizacao(e) {
     return;
   }
   try {
-    console.log(atualizar_(reprocessar, true));
+    console.log(atualizar_(reprocessar, true, 'continuação'));
+  } catch (e) {
+    gravarStatus_('tracking', { estado: 'erro', execucaoFim: Date.now(), proxima: null, mensagem: mensagemErro_(e) });
+    throw e;
   } finally {
     lock.releaseLock();
   }
 }
 
-function executarComLock_(reprocessar, automatico) {
+// origem (painel de execuções): 'menu' | 'gatilho' | 'cadeia' | 'painel'
+function executarComLock_(reprocessar, automatico, origem) {
   const lock = LockService.getScriptLock();
-  if (!lock.tryLock(1000)) return 'Já existe uma atualização em andamento.';
+  if (!lock.tryLock(1000)) return MSG_OCUPADO;
   try {
-    return atualizar_(reprocessar, automatico);
+    return atualizar_(reprocessar, automatico, origem);
+  } catch (e) {
+    gravarStatus_('tracking', { estado: 'erro', execucaoFim: Date.now(), proxima: null, mensagem: mensagemErro_(e) });
+    throw e;
   } finally {
     lock.releaseLock();
   }
 }
 
-function atualizar_(reprocessar, automatico) {
+function atualizar_(reprocessar, automatico, origem) {
   const inicio = Date.now();
   const cfg = CONFIG.PLANILHA;
   const props = PropertiesService.getScriptProperties();
@@ -131,6 +141,9 @@ function atualizar_(reprocessar, automatico) {
   const total = aba.getLastRow() - cab;
   if (total <= 0) {
     encerrarCiclo_();
+    statusTrackingInicio_(true, 0, reprocessar, origem);
+    statusTrackingFim_('ok', 'Nenhuma linha para processar.', 0, 0, null);
+    avancarCadeia_('tracking');
     return 'Nenhuma linha para processar.';
   }
 
@@ -165,6 +178,7 @@ function atualizar_(reprocessar, automatico) {
     if (!reprocessar && statusFinalizado_(status[i][0])) continue;
     pendentes.push(i);
   }
+  statusTrackingInicio_(primeiro === 0, pendentes.length, reprocessar, origem);
 
   // Rede de segurança: se o Apps Script encerrar esta execução à força, este gatilho
   // retoma do último lote gravado. É substituído no fim normal da execução.
@@ -213,6 +227,7 @@ function atualizar_(reprocessar, automatico) {
     proxima = p + cfg.LOTE < pendentes.length ? pendentes[p + cfg.LOTE] : null;
     if (proxima !== null) props.setProperty(CURSOR_PROP, String(cab + 1 + proxima));
     if (feitas === lote.length) props.setProperty(FALHAS_PROP, '0');
+    statusTrackingProgresso_(feitas, pendentes.length - feitas, false);
   }
 
   let msg = feitas + ' linha(s) atualizada(s) na aba "' + aba.getName() + '".' +
@@ -221,13 +236,17 @@ function atualizar_(reprocessar, automatico) {
   console.log(msg);
   if (proxima === null) {
     encerrarCiclo_();
+    statusTrackingFim_('ok', msg, feitas, 0, null);
     // ciclo completo: atualiza o arquivo Payload_Tracking (falha aqui não desfaz a atualização)
+    let alertaJson = null;
     try {
-      msg += ' ' + gerarPayloadTracking();
+      msg += ' ' + gerarPayloadTracking('tracking');
     } catch (e) {
-      const motivo = String(e && e.message ? e.message : e).replace(/^Payload_Tracking:\s*/, '').replace(/\.$/, '');
-      msg += ' Payload_Tracking não gerado (' + motivo + ').';
+      const motivo = mensagemErro_(e).replace(/^Payload_Tracking:\s*/, '').replace(/\.$/, '');
+      alertaJson = 'Payload_Tracking não gerado (' + motivo + ')';
+      msg += ' ' + alertaJson + '.';
     }
+    avancarCadeia_('tracking', alertaJson);
     return msg;
   }
 
@@ -237,18 +256,26 @@ function atualizar_(reprocessar, automatico) {
   agendarContinuacao_(reprocessar, esperaMs);
   const espera = Math.round(esperaMs / 60000) + ' min';
 
+  const restantes = pendentes.length - feitas;
+
   if (sobrecarga) {
     console.warn('Rastro indisponível na linha ' + linha + ': ' + sobrecarga);
-    return msg + ' A API Rastro recusou as consultas (' + sobrecarga + '); nova tentativa automática em ~' +
+    msg += ' A API Rastro recusou as consultas (' + sobrecarga + '); nova tentativa automática em ~' +
       espera + ' a partir da linha ' + linha + '.';
+    statusTrackingFim_('alerta', msg, feitas, restantes, esperaMs);
+    return msg;
   }
 
   if (erro) {
     const texto = erro && erro.message ? erro.message : erro;
     console.warn('Falha na linha ' + linha + ': ' + texto);
-    return msg + ' Falha de comunicação na linha ' + linha + ' (' + texto + '); nova tentativa automática em ~' + espera + '.';
+    msg += ' Falha de comunicação na linha ' + linha + ' (' + texto + '); nova tentativa automática em ~' + espera + '.';
+    statusTrackingFim_('alerta', msg, feitas, restantes, esperaMs);
+    return msg;
   }
-  return msg + ' Tempo limite atingido: a atualização continua sozinha em ~' + espera + ' a partir da linha ' + linha + '.';
+  msg += ' Tempo limite atingido: a atualização continua sozinha em ~' + espera + ' a partir da linha ' + linha + '.';
+  statusTrackingFim_('aguardando', msg, feitas, restantes, esperaMs);
+  return msg;
 }
 
 /* ---------- Continuação automática (gatilho de tempo de uso único) ---------- */

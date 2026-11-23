@@ -1,0 +1,116 @@
+<!-- Vista "Cruzamentos": painel de execuções (cadeia, tracking, relatórios do Drive, Payload_Tracking).
+     Lógica em js/TelaCruzamentos, estilo em css/EstiloCruzamentos; dados de statusExecucoes() (gs/StatusExecucoes). -->
+<section class="vista" data-vista="cruzamentos" hidden>
+
+  <!-- estado geral + ações -->
+  <div class="card-container painel-topo">
+    <div class="painel-geral">
+      <span class="luz luz-g" id="geralLuz" data-estado="" aria-hidden="true"></span>
+      <div>
+        <div class="painel-geral-titulo" id="geralTitulo">Carregando…</div>
+        <div class="texto-apoio painel-geral-texto" id="geralTexto"></div>
+      </div>
+    </div>
+    <div class="painel-acoes">
+      <button class="btn btn-brand" type="button" data-acao-painel="cadeia" title="Importa os protocolos e, em seguida, relatórios do Drive → tracking → Payload_Tracking">
+        <svg class="icone" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3l14 9-14 9V3z"/></svg>
+        <span>Executar cadeia completa</span>
+      </button>
+      <button class="btn btn-secundario" type="button" data-acao-painel="tracking">Atualizar tracking</button>
+      <button class="btn btn-secundario" type="button" data-acao-painel="cruzamentos">Cruzar relatórios</button>
+      <button class="btn btn-secundario" type="button" data-acao-painel="json">Gerar JSON</button>
+      <button class="btn btn-fantasma btn-icone" type="button" id="recarregarPainel" title="Ler o status agora" aria-label="Ler o status agora">
+        <svg class="icone" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <div class="aviso aviso-info" id="avisoPainel" role="status" hidden></div>
+
+  <!-- cadeia: protocolos -> relatórios -> tracking -> JSON -->
+  <div class="card-container">
+    <div class="painel-cabecalho">
+      <div>
+        <div class="card-titulo">Cadeia de atualização</div>
+        <div class="card-legenda">Ao importar os protocolos, os relatórios do Drive, o tracking e o Payload_Tracking são atualizados em sequência, sozinhos.</div>
+      </div>
+      <span class="chip chip-neutro" id="cadeiaChip">Sem registro</span>
+    </div>
+    <ol class="cadeia" id="cadeiaEtapas">
+      <li class="estacao" data-etapa="importacao"><span class="luz" data-estado=""></span><div class="estacao-nome">Protocolos</div><div class="estacao-estado"></div><div class="estacao-hora"></div></li>
+      <li class="estacao" data-etapa="cruzamentos"><span class="luz" data-estado=""></span><div class="estacao-nome">Relatórios do Drive</div><div class="estacao-estado"></div><div class="estacao-hora"></div></li>
+      <li class="estacao" data-etapa="tracking"><span class="luz" data-estado=""></span><div class="estacao-nome">Tracking</div><div class="estacao-estado"></div><div class="estacao-hora"></div></li>
+      <li class="estacao" data-etapa="json"><span class="luz" data-estado=""></span><div class="estacao-nome">Payload_Tracking</div><div class="estacao-estado"></div><div class="estacao-hora"></div></li>
+    </ol>
+    <p class="texto-apoio painel-nota" id="cadeiaInfo"></p>
+  </div>
+
+  <div class="painel-grade">
+    <!-- tracking em detalhe -->
+    <div class="card-container">
+      <div class="painel-cabecalho">
+        <div class="painel-titulo-luz">
+          <span class="luz" id="trackingLuz" data-estado="" aria-hidden="true"></span>
+          <div>
+            <div class="card-titulo">Atualização de tracking</div>
+            <div class="card-legenda">Reversa, Rastro e Intelipost nas linhas em aberto</div>
+          </div>
+        </div>
+        <span class="chip chip-neutro" id="trackingChip">Sem registro</span>
+      </div>
+
+      <div class="tracking-progresso">
+        <div class="progresso"><div class="progresso-barra" id="trackingBarra"></div></div>
+        <div class="tracking-numeros"><span id="trackingContagem"></span><span id="trackingPct" class="numero"></span></div>
+      </div>
+
+      <dl class="painel-dados">
+        <div><dt>Última atualização concluída</dt><dd id="trackingConclusao">—</dd></div>
+        <div><dt>Ciclo atual</dt><dd id="trackingCiclo">—</dd></div>
+        <div><dt>Última execução</dt><dd id="trackingExecucao">—</dd></div>
+        <div><dt>Próxima continuação</dt><dd id="trackingProxima">—</dd></div>
+      </dl>
+      <p class="painel-mensagem" id="trackingMensagem"></p>
+    </div>
+
+    <!-- painel de luzes: relatórios do Drive e saída -->
+    <div class="card-container">
+      <div class="painel-cabecalho">
+        <div>
+          <div class="card-titulo">Relatórios do Drive</div>
+          <div class="card-legenda">Clique numa luz para ver o resultado da última leitura</div>
+        </div>
+        <span class="chip chip-neutro" id="relatoriosChip">Sem registro</span>
+      </div>
+      <div class="painel-luzes" id="painelLuzes" role="list"></div>
+      <div class="placa-detalhe" id="placaDetalhe" hidden>
+        <div class="placa-detalhe-titulo" id="placaDetalheTitulo"></div>
+        <p class="painel-mensagem" id="placaDetalheTexto"></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- legenda e acionadores -->
+  <div class="card-container">
+    <div class="painel-rodape">
+      <div>
+        <div class="card-titulo">Legenda</div>
+        <ul class="legenda-luzes">
+          <li><span class="luz luz-p" data-estado="ok"></span>Concluído</li>
+          <li><span class="luz luz-p" data-estado="executando"></span>Em execução</li>
+          <li><span class="luz luz-p" data-estado="aguardando"></span>Aguardando continuação</li>
+          <li><span class="luz luz-p" data-estado="agendado"></span>Na fila</li>
+          <li><span class="luz luz-p" data-estado="alerta"></span>Atenção (parcial / nova tentativa)</li>
+          <li><span class="luz luz-p" data-estado="erro"></span>Erro</li>
+          <li><span class="luz luz-p" data-estado=""></span>Sem registro / cancelado</li>
+        </ul>
+      </div>
+      <div>
+        <div class="card-titulo">Acionadores do projeto</div>
+        <ul class="lista-acionadores" id="listaAcionadores"></ul>
+        <p class="texto-apoio painel-nota">Para agendar: Apps Script › Acionadores › Adicionar acionador, com a função <code>atualizarAutorizacoes</code> (tracking + JSON) ou <code>executarCadeiaCompleta</code> (cadeia inteira), evento baseado em tempo.</p>
+      </div>
+    </div>
+    <p class="texto-apoio painel-nota" id="painelLido"></p>
+  </div>
+</section>
