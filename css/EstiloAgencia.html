@@ -1,0 +1,58 @@
+<style>
+/*
+ * Agência de triagem (js/Agencia): cena em canvas, equipe, ficha e rastreamento dos malotes. Só tokens.
+ * A cena é pixel art: as cores do desenho vêm dos tokens --ag-* (css/Tokens).
+ */
+
+.agencia-rolagem { overflow-x: auto; border-radius: 12px; border: 1px solid var(--border-color); background: var(--bg-subtle); }
+.agencia-cena { display: block; width: 100%; min-width: 640px; cursor: pointer; image-rendering: pixelated; }
+
+/* equipe (lista) + ficha do selecionado */
+.agencia-equipe { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; align-items: start; }
+.agencia-equipe > .card-container { margin-bottom: 16px; }
+.lista-equipe { list-style: none; margin: 12px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 6px; }
+
+.agente {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  gap: 4px 10px;
+  align-items: center;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-subtle);
+  color: var(--text-main);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.agente:hover { background: var(--bg-elevated); }
+.agente[aria-pressed="true"] { border-color: var(--brand-accent); background: var(--bg-card); }
+.agente:focus-visible { outline: 2px solid var(--brand-accent); outline-offset: 2px; }
+.agente-avatar { grid-row: span 2; width: 30px; height: 30px; border-radius: 8px; background: var(--bg-elevated); image-rendering: pixelated; }
+.agente-nome { font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agente-tarefa { grid-column: 2 / 4; font-size: 12px; color: var(--text-support); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.agente-barra { grid-column: 2 / 4; height: 4px; border-radius: 2px; background: var(--bg-elevated); overflow: hidden; }
+.agente-barra span { display: block; height: 100%; border-radius: 2px; background: var(--brand-accent); transition: width 0.4s; }
+.agente-barra span[data-estado="ok"] { background: var(--emerald); }
+.agente-barra span[data-estado="erro"] { background: var(--red-alert); }
+.agente-barra span[data-estado="alerta"] { background: var(--violet); }
+.agente-barra span[data-estado="agendado"], .agente-barra span[data-estado=""] { background: var(--text-support); }
+
+.agencia-ficha { display: flex; flex-direction: column; gap: 10px; }
+.ficha-topo { display: flex; gap: 12px; align-items: center; }
+.ficha-topo canvas { width: 48px; height: 48px; border-radius: 8px; background: var(--bg-elevated); image-rendering: pixelated; }
+.ficha-fala { font-family: 'Silkscreen', 'IBM Plex Mono', monospace; font-size: 11px; padding: 8px 10px; border-radius: 8px; background: var(--bg-elevated); }
+.agencia-ficha dl { margin: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 12px; font-size: 13px; }
+.agencia-ficha dt { color: var(--text-support); }
+.agencia-ficha dd { margin: 0; overflow-wrap: anywhere; }
+.ficha-msg { font-size: 12px; color: var(--text-support); }
+
+/* rastreamento dos malotes */
+.malotes-caixa { margin-top: 12px; }
+.malotes { min-width: 720px; }
+.malote-detalhe { max-width: 320px; overflow: hidden; text-overflow: ellipsis; color: var(--text-support); }
+
+@media (max-width: 900px) { .agencia-equipe { grid-template-columns: 1fr; } }
+</style>

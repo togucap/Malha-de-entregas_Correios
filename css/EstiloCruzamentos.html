@@ -63,66 +63,10 @@
 .painel-dados dt { font-size: 12px; color: var(--text-support); }
 .painel-dados dd { margin: 2px 0 0; font-size: 14px; font-variant-numeric: tabular-nums; }
 
-/* painel de luzes: uma placa por relatório */
-.painel-luzes {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
-  gap: 10px;
-  padding: 12px;
-  border: 1px solid var(--border-color);
-  border-radius: 12px;
-  background: var(--bg-subtle);
-}
-
-.placa {
-  /* 1ª linha com altura de duas linhas de plaqueta: nome curto ou quebrado, as luzes ficam alinhadas */
-  display: grid;
-  grid-template-rows: 36px auto auto auto;
-  justify-items: center;
-  align-content: start;
-  gap: 8px;
-  padding: 12px 8px;
-  min-width: 0;
-  border: 1px solid transparent;
-  border-radius: 12px;
-  background: transparent;
-  color: var(--text-main);
-  font: inherit;
-  cursor: pointer;
-  text-align: center;
-}
-
-.placa:hover { background: var(--bg-elevated); }
-.placa[aria-pressed="true"] { border-color: var(--brand-accent); background: var(--bg-card); }
-.placa:focus-visible { outline: 2px solid var(--brand-accent); outline-offset: 2px; }
-
-/* plaqueta com o nome, como a etiqueta acima de cada lâmpada */
-.placa-rotulo {
-  align-self: end;
-  max-width: 100%;
-  padding: 2px 8px;
-  border-radius: 8px;
-  background: var(--bg-elevated);
-  font-family: 'IBM Plex Mono', monospace;
-  font-weight: 600;
-  font-size: 11px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--text-support);
-  line-height: 1.4;
-  overflow-wrap: anywhere;
-}
-
-.placa-estado { font-size: 13px; font-weight: 500; }
-.placa-hora { font-family: 'IBM Plex Mono', monospace; font-weight: 600; font-size: 11px; color: var(--text-support); min-height: 14px; }
-
-.placa-detalhe { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-color); }
-.placa-detalhe-titulo { font-weight: 600; font-size: 13px; }
-.placa-detalhe .painel-mensagem { margin-top: 4px; }
-
 /* ---------- Rodapé: legenda e acionadores ---------- */
 
 .painel-rodape { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 24px; }
+.painel-grade .painel-rodape { grid-template-columns: 1fr; gap: 16px; }
 .legenda-luzes, .lista-acionadores { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
 .legenda-luzes li { display: flex; align-items: center; gap: 10px; }
 .lista-acionadores li { display: flex; justify-content: space-between; gap: 12px; padding: 6px 10px; border-radius: 8px; background: var(--bg-subtle); }
@@ -137,9 +81,6 @@
 
 @media (max-width: 700px) {
   .painel-dados { grid-template-columns: 1fr; }
-  .painel-luzes { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 8px; }
-  .placa { padding: 10px 4px; }
-  .placa-rotulo { font-size: 10px; letter-spacing: 0; padding: 2px 6px; }
   .painel-acoes { width: 100%; }
   .painel-acoes .btn-brand { flex: 1 1 100%; }
   .painel-acoes .btn-secundario { flex: 1 1 auto; }

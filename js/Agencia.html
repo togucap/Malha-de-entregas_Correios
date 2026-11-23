@@ -1,0 +1,502 @@
+<script>
+/*
+ * Agência de triagem (vista Cruzamentos): a cadeia desenhada como uma agência postal em pixel art
+ * isométrica, movida pelo statusExecucoes() real (gs/StatusExecucoes).
+ *   Balcão (Íris)            = importação dos protocolos; envelopes entram pela fenda "DRIVE"
+ *   Triagem (um por relatório de CRUZAMENTOS) = escaninhos enchem com o % lido de cada relatório
+ *   Carteiros (Beto, Nina, Rui) = tracking: Reversa, Rastro e Jadlog; alfinete do mapa = linhas do ciclo
+ *   Expedição (Gabi)         = Payload JSON; o furgão sai quando o arquivo é gerado
+ *   Chefe da agência (Sr. Elias) = a cadeia
+ * Cada funcionário tem a luz de estado (cores do painel) e um balão com o que está fazendo.
+ * Também monta a tabela "Rastreamento dos malotes", a lista da equipe e a ficha do selecionado.
+ *
+ * Uso: Agencia.atualizar(dados)  (dados = retorno de statusExecucoes()).
+ * Animação só com a vista aberta e a aba visível; com "reduzir movimento" a cena fica parada.
+ * Cores: tokens --ag-* de css/Tokens (relidos ao trocar de tema).
+ */
+(function () {
+  var VISTA = 'cruzamentos';
+  var LW = 820, LH = 500, TW = 40, TH = 20, OX = 330, OY = 130;
+  var RACK = { x0: 8, x1: 17 };
+  var NOMES_TRIAGEM = ['Davi', 'Lia', 'Caio', 'Tina'];
+  var TAREFAS_RELATORIO = {
+    parceiros: 'Traz Parceiro e Pedido do parceiro',
+    ordemServico: 'Marca a assistência técnica (pedido + rastreio)',
+    listaMspc: 'Marca a entrada no estoque (Sim/Não)'
+  };
+  var ROTULOS = { '': 'Sem registro', agendado: 'Na fila', executando: 'Trabalhando', aguardando: 'Aguardando continuação', ok: 'Concluído', alerta: 'Atenção', erro: 'Erro', parado: 'Cancelado' };
+  var CHIPS = { '': 'chip-neutro', parado: 'chip-neutro', agendado: 'chip-info', executando: 'chip-marca', aguardando: 'chip-marca', ok: 'chip-sucesso', alerta: 'chip-divergencia', erro: 'chip-erro' };
+  var ETAPAS = { importacao: 'Balcão (protocolos)', cruzamentos: 'Triagem (relatórios)', tracking: 'Carteiros (tracking)', json: 'Expedição (JSON)', cadeia: 'Coordena todas' };
+  var NOMES_CADEIA = { importacao: 'Protocolos', cruzamentos: 'Relatórios do Drive', tracking: 'Tracking', concluida: 'Concluída' };
+
+  var C = {};
+  var CORES = ['ag-piso-a', 'ag-piso-b', 'ag-piso-linha', 'ag-faixa', 'ag-parede-esq', 'ag-parede-dir', 'ag-parede-topo', 'ag-movel-topo', 'ag-movel-esq', 'ag-movel-dir',
+    'ag-tela-off', 'ag-estante-topo', 'ag-estante-esq', 'ag-estante-dir', 'ag-escaninho', 'ag-envelope', 'ag-envelope-borda', 'ag-malote', 'ag-van', 'ag-van-sombra',
+    'ag-vidro', 'ag-mapa', 'ag-mapa-linha', 'ag-bike', 'ag-pele', 'ag-sombra', 'ag-contorno', 'ag-balao', 'ag-balao-texto', 'ag-cracha-texto',
+    'ag-camisa-balcao', 'ag-camisa-triagem', 'ag-camisa-carteiro', 'ag-camisa-expedicao', 'ag-camisa-chefe',
+    'ag-cabelo-1', 'ag-cabelo-2', 'ag-cabelo-3', 'ag-cabelo-4', 'ag-cabelo-5',
+    'brand-accent', 'emerald', 'red-alert', 'violet', 'blue', 'text-support', 'text-main'];
+
+  var canvas, ctx, escala = 1, montado = false;
+  var reduzir = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var agentes = [], assinaturaEquipe = '', selecionado = 'importador';
+  var dados = null, sit = null, recebidoEm = 0;
+  var anim = { rodando: false, anterior: 0, relogio: 0, carrinhos: [], voando: [], proxCarro: 0, proxEnv: {}, ultimoPainel: '' };
+
+  function lerCores() {
+    var cs = getComputedStyle(document.documentElement);
+    CORES.forEach(function (n) { C[n] = cs.getPropertyValue('--' + n).trim(); });
+    anim.ultimoPainel = '';
+  }
+  function corEstado(e) { return { ok: C.emerald, executando: C['brand-accent'], aguardando: C['brand-accent'], agendado: C.blue, alerta: C.violet, erro: C['red-alert'] }[e] || C['ag-tela-off']; }
+  function escapar(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function curto(texto) { return String(texto || '').slice(0, 16).replace(/^(\d{2}\/\d{2})\/\d{4}/, '$1'); }
+  function numero(n) { return Number(n || 0).toLocaleString('pt-BR'); }
+  function resumo(t, n) { t = String(t || ''); return t.length > (n || 56) ? t.slice(0, (n || 56) - 1) + '…' : t; }
+
+  /* ---------- Isometria e primitivas ---------- */
+  function iso(x, y, z) { return [OX + (x - y) * TW / 2, OY + (x + y) * TH / 2 - (z || 0)]; }
+  function poli(pts, cor, contorno) {
+    ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]);
+    for (var i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+    ctx.closePath(); ctx.fillStyle = cor; ctx.fill();
+    if (contorno) { ctx.strokeStyle = contorno; ctx.lineWidth = 1; ctx.stroke(); }
+  }
+  function bloco(x, y, w, d, h, topo, esq, dir, z0) {
+    z0 = z0 || 0;
+    poli([iso(x, y + d, z0), iso(x + w, y + d, z0), iso(x + w, y + d, z0 + h), iso(x, y + d, z0 + h)], esq);
+    poli([iso(x + w, y, z0), iso(x + w, y + d, z0), iso(x + w, y + d, z0 + h), iso(x + w, y, z0 + h)], dir);
+    poli([iso(x, y, z0 + h), iso(x + w, y, z0 + h), iso(x + w, y + d, z0 + h), iso(x, y + d, z0 + h)], topo);
+  }
+  function movel(x, y, w, d, h, z0) { bloco(x, y, w, d, h, C['ag-movel-topo'], C['ag-movel-esq'], C['ag-movel-dir'], z0); }
+  function px(x, y, w, h, cor) { ctx.fillStyle = cor; ctx.fillRect(Math.round(x), Math.round(y), w, h); }
+  function texto(t, x, y, cor, alinhar) {
+    ctx.font = '8px Silkscreen, monospace'; ctx.fillStyle = cor; ctx.textBaseline = 'middle'; ctx.textAlign = alinhar || 'left';
+    ctx.fillText(t, Math.round(x), Math.round(y)); ctx.textAlign = 'left';
+  }
+  function caminho(pontos) {
+    var trechos = [], total = 0;
+    for (var i = 1; i < pontos.length; i++) {
+      var a = pontos[i - 1], b = pontos[i], len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      trechos.push({ a: a, b: b, s0: total, len: len }); total += len;
+    }
+    return { trechos: trechos, comprimento: total, pontoEm: function (s) {
+      for (var k = 0; k < trechos.length; k++) {
+        var t = trechos[k];
+        if (s <= t.s0 + t.len || k === trechos.length - 1) {
+          var f = Math.max(0, Math.min(1, (s - t.s0) / t.len));
+          return [t.a[0] + (t.b[0] - t.a[0]) * f, t.a[1] + (t.b[1] - t.a[1]) * f];
+        }
+      }
+    } };
+  }
+  var PISTA = caminho([[6.4, 4.7], [18.6, 4.7], [18.6, 9.3], [5.2, 9.3]]);
+  var TRECHO = { cruzamentos: [0, 11.6], tracking: [12.6, PISTA.comprimento - 0.2] };
+
+  /* ---------- Equipe (a triagem acompanha a lista de CRUZAMENTOS) ---------- */
+  function montarEquipe(lista) {
+    var n = Math.max(1, Math.min(4, lista.length)), larg = (RACK.x1 - RACK.x0) / n;
+    var eq = [{ id: 'importador', nome: 'Íris', papel: 'Atendente · Protocolos', tarefa: 'Recebe o Consolidado_Protocolos e atualiza a base', processo: 'importacao', camisa: 'ag-camisa-balcao', cabelo: 'ag-cabelo-1', x: 2.6, y: 3.0, olha: 1 }];
+    lista.slice(0, 4).forEach(function (r, i) {
+      eq.push({ id: 'rel-' + r.id, relId: r.id, nome: NOMES_TRIAGEM[i], papel: 'Triagem · ' + (r.rotulo || r.arquivo), tarefa: TAREFAS_RELATORIO[r.id] || 'Cruza ' + r.arquivo + ' com a base',
+        processo: 'cruzamentos', camisa: 'ag-camisa-triagem', cabelo: 'ag-cabelo-' + (2 + i % 3), x: RACK.x0 + larg * i + larg / 2 - 0.4, y: 1.4, olha: -1, secao: { x: RACK.x0 + larg * i, w: larg, rotulo: (r.rotulo || r.arquivo).toUpperCase() } });
+    });
+    eq.push(
+      { id: 'reversa', nome: 'Beto', papel: 'Carteiro · Logística Reversa', tarefa: 'Converte autorizações em código de rastreio', processo: 'tracking', parte: 'reversa', camisa: 'ag-camisa-carteiro', cabelo: 'ag-cabelo-2', x: 15.2, y: 10.9, mesa: [14.8, 9.9], olha: -1, bone: true },
+      { id: 'rastro', nome: 'Nina', papel: 'Carteira · Rastro', tarefa: 'Último evento, data, cidade e previsão de entrega', processo: 'tracking', parte: 'rastro', camisa: 'ag-camisa-carteiro', cabelo: 'ag-cabelo-1', x: 11.4, y: 10.9, mesa: [11.0, 9.9], olha: -1, bone: true },
+      { id: 'jadlog', nome: 'Rui', papel: 'Carteiro · Jadlog', tarefa: 'Pedidos Jadlog pelo proxy da Intelipost', processo: 'tracking', parte: 'jadlog', camisa: 'ag-camisa-carteiro', cabelo: 'ag-cabelo-5', x: 7.6, y: 10.9, mesa: [7.2, 9.9], olha: -1, bone: true },
+      { id: 'expedidor', nome: 'Gabi', papel: 'Expedição · Payload JSON', tarefa: 'Fecha o malote do Payload_Tracking na pasta do Drive', processo: 'json', camisa: 'ag-camisa-expedicao', cabelo: 'ag-cabelo-3', x: 18.4, y: 12.4, olha: 1 },
+      { id: 'supervisor', nome: 'Sr. Elias', papel: 'Chefe da agência · Cadeia', tarefa: 'Libera cada etapa quando a anterior termina', processo: 'cadeia', camisa: 'ag-camisa-chefe', cabelo: 'ag-cabelo-5', x: 21.6, y: 5.9, mesa: [21.2, 6.9], olha: 1, chefe: true }
+    );
+    return eq;
+  }
+  function agentePorId(id) { return agentes.filter(function (a) { return a.id === id; })[0]; }
+
+  /* ---------- Situação de cada funcionário a partir do status real ---------- */
+  function situacao(d) {
+    var p = d.processos, ag = {}, ativos = {};
+    var imp = p.importacao || {}, cz = p.cruzamentos || {}, tk = p.tracking || {}, js = p.json || {}, cad = p.cadeia || {};
+    ['importacao', 'cruzamentos', 'tracking', 'json'].forEach(function (k) { ativos[k] = (p[k] || {}).estado === 'executando'; });
+
+    var e = imp.estado || '', novos = /(\d[\d.]*) protocolo\(s\) novo/.exec(imp.mensagem || '');
+    ag.importador = { e: e, p: e === 'ok' ? 1 : e === 'executando' ? null : 0, msg: imp.mensagem, quando: imp.fimTexto || imp.inicioTexto,
+      fala: e === 'executando' ? 'Lendo ' + (imp.arquivo || 'Consolidado_Protocolos') + '…' : e === 'ok' ? (novos ? novos[1] + ' protocolo(s) novo(s)' : 'Importação concluída')
+        : e === 'erro' ? 'Erro: ' + resumo(imp.mensagem, 40) : e === 'agendado' ? 'Na fila' : e === 'parado' ? 'Cancelado' : 'Sem importação registrada' };
+
+    (cz.lista || []).forEach(function (r) {
+      var er = r.estado || '', enc = /(\d[\d.]*) encontrado/.exec(r.mensagem || '');
+      var pr = er === 'ok' || er === 'erro' ? 1 : (er === 'executando' || er === 'aguardando') ? (r.progresso ? r.progresso / 100 : null) : 0;
+      ag['rel-' + r.id] = { e: er, p: pr, msg: r.mensagem, quando: r.fimTexto,
+        fala: er === 'executando' || er === 'aguardando' ? (r.rotulo || r.arquivo) + (r.progresso ? ' · ' + r.progresso + '% lido' : ' · lendo')
+          : er === 'ok' ? (enc ? enc[1] + ' encontrados' : 'Leitura concluída') : er === 'erro' ? 'Erro: ' + resumo(String(r.mensagem || '').split('ERRO – ')[1] || r.mensagem, 40)
+          : er === 'agendado' ? 'Na fila' : er === 'parado' ? 'Cancelado' : 'Sem leitura registrada' };
+      ativos['rel-' + r.id] = er === 'executando';
+    });
+
+    var et = tk.estado || '', pr2 = tk.progresso || { feitas: 0, restantes: 0 }, total = (pr2.feitas || 0) + (pr2.restantes || 0);
+    var frac = et === 'ok' ? 1 : total ? pr2.feitas / total : 0, fim = tk.ultimaConclusaoMensagem || tk.mensagem || '';
+    var parte = function (rotulo) { var m = new RegExp(rotulo + ': ([^.]*)').exec(fim); return m ? rotulo + ': ' + m[1] : ''; };
+    ['reversa', 'rastro', 'jadlog'].forEach(function (id) {
+      var fala;
+      if (et === 'executando') fala = id === 'rastro' ? numero(pr2.feitas) + ' de ' + numero(total) + ' linhas' : id === 'reversa' ? 'Reversa · autorizações sem código' : 'Jadlog · proxy da Intelipost';
+      else if (et === 'aguardando') fala = tk.proximaTexto ? 'Continua às ' + String(tk.proximaTexto).slice(11) : 'Continua em ~1 min';
+      else if (et === 'ok') fala = id === 'rastro' ? (parte('Rastro') || 'Rastro concluído') : id === 'jadlog' ? (parte('Intelipost') || 'Sem linhas Jadlog no ciclo') : 'Ciclo concluído · ' + curto(tk.ultimaConclusaoTexto);
+      else if (et === 'alerta') fala = 'Nova tentativa' + (tk.proximaTexto ? ' às ' + String(tk.proximaTexto).slice(11) : '');
+      else if (et === 'erro') fala = 'Erro: ' + resumo(tk.mensagem, 40);
+      else fala = et === 'agendado' ? 'Na fila' : et === 'parado' ? 'Cancelado' : 'Sem ciclo registrado';
+      ag[id] = { e: et, p: frac, msg: tk.mensagem, quando: tk.execucaoFimTexto || tk.execucaoInicioTexto, fala: resumo(fala, 46) };
+    });
+
+    var ej = js.estado || '';
+    ag.expedidor = { e: ej, p: ej === 'ok' ? 1 : ej === 'executando' ? 0.5 : 0, msg: js.mensagem, quando: js.fimTexto,
+      fala: ej === 'ok' ? numero(js.totalPedidos) + ' pedidos gravados' : ej === 'executando' ? 'Gerando Payload_Tracking' : ej === 'erro' ? 'Erro: ' + resumo(js.mensagem, 40) : ej === 'alerta' ? 'Gerado com aviso' : 'Gera no fim do tracking' };
+
+    var ec = cad.estado || '', emAndamento = ['importacao', 'cruzamentos', 'tracking', 'json'].filter(function (k) { return ativos[k]; });
+    ag.supervisor = { e: ec, p: 0, msg: cad.mensagem, quando: cad.fimTexto || cad.inicioTexto,
+      fala: ec === 'executando' ? 'Etapa: ' + (NOMES_CADEIA[cad.etapa] || cad.etapa) : ec === 'ok' ? 'Cadeia concluída · ' + curto(cad.fimTexto) : ec === 'alerta' ? 'Concluída com alerta'
+        : ec === 'erro' ? 'Cadeia parou na importação' : ec === 'agendado' ? 'Cadeia na fila' : ec === 'parado' ? 'Cadeia cancelada'
+        : emAndamento.length ? 'Acompanhando: ' + emAndamento.map(function (k) { return ETAPAS[k]; }).join(', ') : 'Aguardando acionador' };
+    return { ag: ag, ativos: ativos, json: js, agora: d.agora };
+  }
+
+  /* ---------- Desenho ---------- */
+  function desenharPessoa(a, st, t) {
+    var base = iso(a.x + 0.5, a.y + 0.5, 0), bx = base[0], by = base[1];
+    var trabalhando = st.e === 'executando' && !reduzir;
+    var bob = trabalhando ? Math.round(Math.sin(t * 9 + a.x) * 1) : 0, camisa = C[a.camisa], cabelo = C[a.cabelo], k = C['ag-contorno'];
+    ctx.fillStyle = C['ag-sombra']; ctx.beginPath(); ctx.ellipse(bx, by, 10, 5, 0, 0, Math.PI * 2); ctx.fill();
+    if (selecionado === a.id) { ctx.strokeStyle = C['brand-accent']; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(bx, by, 14, 7, 0, 0, Math.PI * 2); ctx.stroke(); }
+    var y0 = by - 34 + bob, frente = a.olha === 1, passo = trabalhando ? Math.round(Math.sin(t * 9) * 1) : 0;
+    px(bx - 5, y0 + 22, 4, 10 + passo, k); px(bx + 1, y0 + 22, 4, 10 - passo, k);
+    px(bx - 7, y0 + 10, 14, 13, k); px(bx - 6, y0 + 11, 12, 11, camisa);
+    var braco = trabalhando ? Math.round(Math.sin(t * 12 + a.y) * 3) : 0;
+    px(bx - 10, y0 + 12 - Math.max(0, braco), 4, 9, k); px(bx - 9, y0 + 13 - Math.max(0, braco), 2, 7, camisa);
+    px(bx + 6, y0 + 12 - Math.max(0, -braco), 4, 9, k); px(bx + 7, y0 + 13 - Math.max(0, -braco), 2, 7, camisa);
+    if (st.e === 'erro' || st.e === 'alerta') { px(bx + 6, y0 - 2, 4, 12, k); px(bx + 7, y0 - 1, 2, 10, camisa); } // braço levantado
+    px(bx - 6, y0, 12, 11, k); px(bx - 5, y0 + 1, 10, 9, C['ag-pele']); px(bx - 5, y0 + 1, 10, 3, cabelo);
+    if (frente) { px(bx - 3, y0 + 5, 2, 2, k); px(bx + 1, y0 + 5, 2, 2, k); } else { px(bx - 5, y0 + 1, 10, 7, cabelo); }
+    if (a.chefe) { px(bx - 6, y0 - 3, 12, 3, k); px(bx - 7, y0 - 1, 14, 2, k); }
+    if (a.bone) { px(bx - 6, y0 - 2, 12, 4, k); px(bx - 5, y0 - 1, 10, 3, C['brand-accent']); px(bx + (frente ? -2 : -7), y0 + 1, 9, 2, k); }
+    var cor = corEstado(st.e), ly = y0 - 10;
+    if (st.e && st.e !== 'parado') {
+      var pulso = st.e === 'executando' && !reduzir ? 0.55 + 0.45 * Math.sin(t * 6) : 1;
+      ctx.globalAlpha = 0.25 * pulso; ctx.fillStyle = cor; ctx.beginPath(); ctx.arc(bx, ly, 7, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
+    }
+    px(bx - 3, ly - 3, 6, 6, k); px(bx - 2, ly - 2, 4, 4, st.e && st.e !== 'parado' ? cor : C['ag-tela-off']);
+    a._tela = { x: bx, topo: ly - 6, pe: by };
+  }
+  function desenharMesa(a, st, t) {
+    var m = a.mesa, cor = corEstado(st.e), k = C['ag-contorno'];
+    movel(m[0], m[1], 0.8, 0.8, 12);
+    var tela = iso(m[0] + 0.4, m[1] + 0.4, 12);
+    px(tela[0] - 8, tela[1] - 14, 16, 10, k);
+    px(tela[0] - 7, tela[1] - 13, 14, 8, st.e && st.e !== 'parado' ? cor : C['ag-tela-off']);
+    if (st.e === 'executando' && !reduzir) { var lx = Math.floor((t * 20) % 12); px(tela[0] - 7 + lx, tela[1] - 11, 2, 1, k); }
+    px(tela[0] - 1, tela[1] - 4, 2, 3, k);
+  }
+  function envelope(x, y) { px(x - 4, y - 3, 9, 6, C['ag-envelope-borda']); px(x - 3, y - 2, 7, 4, C['ag-envelope']); px(x - 1, y - 1, 3, 1, C['ag-envelope-borda']); }
+  function bicicleta(x, y) {
+    var c = iso(x, y, 0), k = C['ag-contorno'];
+    ctx.strokeStyle = k; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(c[0] - 7, c[1] - 5, 5, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(c[0] + 7, c[1] - 5, 5, 0, Math.PI * 2); ctx.stroke();
+    ctx.strokeStyle = C['ag-bike']; ctx.beginPath(); ctx.moveTo(c[0] - 7, c[1] - 5); ctx.lineTo(c[0] - 1, c[1] - 12); ctx.lineTo(c[0] + 7, c[1] - 5); ctx.lineTo(c[0] + 2, c[1] - 6); ctx.lineTo(c[0] - 1, c[1] - 12); ctx.stroke();
+    px(c[0] + 3, c[1] - 16, 2, 5, k); px(c[0] - 3, c[1] - 14, 4, 2, k); px(c[0] + 4, c[1] - 12, 6, 4, C['ag-malote']);
+  }
+  function furgao(x, y) {
+    bloco(x, y, 2.6, 1.3, 26, C['ag-van'], C['ag-van-sombra'], C['ag-van-sombra'], 4);
+    bloco(x + 2.6, y + 0.1, 0.9, 1.1, 18, C['ag-van'], C['ag-van-sombra'], C['ag-van-sombra'], 4);
+    poli([iso(x + 3.5, y + 0.25, 12), iso(x + 3.5, y + 1.05, 12), iso(x + 3.5, y + 1.05, 20), iso(x + 3.5, y + 0.25, 20)], C['ag-vidro']);
+    poli([iso(x + 0.1, y + 1.3, 14), iso(x + 2.5, y + 1.3, 14), iso(x + 2.5, y + 1.3, 17), iso(x + 0.1, y + 1.3, 17)], C['brand-accent']);
+    [x + 0.5, x + 2.8].forEach(function (rx) { var r = iso(rx, y + 1.3, 4); px(r[0] - 4, r[1] - 4, 8, 8, C['ag-contorno']); });
+  }
+  function balao(x, y, msg, cor) {
+    ctx.font = '8px Silkscreen, monospace';
+    var w = Math.ceil(ctx.measureText(msg).width) + 10, h = 14;
+    var bx = Math.round(Math.min(LW - w - 4, Math.max(4, x - w / 2))), by = Math.round(y - h - 6);
+    px(bx - 1, by - 1, w + 2, h + 2, cor || C['ag-contorno']); px(bx, by, w, h, C['ag-balao']);
+    px(Math.round(x) - 2, by + h, 4, 3, C['ag-balao']); px(Math.round(x) - 1, by + h + 3, 2, 2, C['ag-balao']);
+    ctx.fillStyle = C['ag-balao-texto']; ctx.textBaseline = 'middle'; ctx.fillText(msg, bx + 5, by + h / 2 + 1);
+  }
+  function cracha(x, y, nome) {
+    ctx.font = '8px Silkscreen, monospace';
+    var w = Math.ceil(ctx.measureText(nome).width) + 6;
+    ctx.globalAlpha = 0.85; px(x - w / 2, y, w, 11, C['ag-contorno']); ctx.globalAlpha = 1;
+    ctx.fillStyle = C['ag-cracha-texto']; ctx.textBaseline = 'middle'; ctx.fillText(nome, Math.round(x - w / 2 + 3), y + 6);
+  }
+
+  // escaninho (coluna, linha) da seção: ponto na frente da estante
+  function celula(sec, col, lin) { var cw = (sec.w - 0.3) / 3; return iso(sec.x + 0.15 + cw * (col + 0.5), 0.5, 13 + lin * 14); }
+
+  function desenharCena(t) {
+    var s = sit, k = C['ag-contorno'];
+    ctx.clearRect(0, 0, LW, LH);
+    poli([iso(0, 0, 0), iso(0, 15, 0), iso(0, 15, 96), iso(0, 0, 96)], C['ag-parede-esq']);
+    poli([iso(0, 0, 0), iso(24, 0, 0), iso(24, 0, 96), iso(0, 0, 96)], C['ag-parede-dir']);
+    poli([iso(0, 0, 96), iso(24, 0, 96), iso(24, -0.3, 96), iso(-0.3, -0.3, 96), iso(-0.3, 15, 96), iso(0, 15, 96)], C['ag-parede-topo']);
+    for (var y = 0; y < 15; y++) for (var x = 0; x < 24; x++) poli([iso(x, y), iso(x + 1, y), iso(x + 1, y + 1), iso(x, y + 1)], (x + y) % 2 ? C['ag-piso-a'] : C['ag-piso-b'], C['ag-piso-linha']);
+    poli([iso(0, 2.5, 34), iso(0, 3.5, 34), iso(0, 3.5, 42), iso(0, 2.5, 42)], k);
+    texto('DRIVE', iso(0, 3, 50)[0], iso(0, 3, 50)[1], C['text-support'], 'center');
+    PISTA.trechos.forEach(function (tr) {
+      var x0 = Math.min(tr.a[0], tr.b[0]) - 0.35, x1 = Math.max(tr.a[0], tr.b[0]) + 0.35, y0 = Math.min(tr.a[1], tr.b[1]) - 0.35, y1 = Math.max(tr.a[1], tr.b[1]) + 0.35;
+      poli([iso(x0, y0), iso(x1, y0), iso(x1, y1), iso(x0, y1)], C['ag-faixa']);
+    });
+
+    // mapa de rotas: uma rota por carteiro, alfinete = linhas consultadas no ciclo
+    poli([iso(19, 0, 22), iso(23.6, 0, 22), iso(23.6, 0, 74), iso(19, 0, 74)], C['ag-mapa'], k);
+    texto('MAPA DE ROTAS', iso(21.3, 0, 86)[0], iso(21.3, 0, 86)[1], C['text-support'], 'center');
+    [['reversa', 0.25], ['rastro', 0.55], ['jadlog', 0.82]].forEach(function (par) {
+      var st = s ? s.ag[par[0]] : { e: '', p: 0 }, e = st.e, z = 22 + 52 * par[1];
+      ctx.strokeStyle = e && e !== 'parado' ? corEstado(e) : C['ag-mapa-linha']; ctx.lineWidth = 2; ctx.beginPath();
+      for (var u = 0; u <= 1.001; u += 0.1) { var p = iso(19.3 + 4 * u, 0, z + Math.sin(u * 6 + par[1] * 9) * 5); if (u === 0) ctx.moveTo(p[0], p[1]); else ctx.lineTo(p[0], p[1]); }
+      ctx.stroke();
+      var andou = e === 'ok' ? 1 : (st.p || 0);
+      var pin = iso(19.3 + 4 * andou, 0, z + Math.sin(andou * 6 + par[1] * 9) * 5);
+      ctx.globalAlpha = e === 'executando' && !reduzir ? (Math.sin(t * 8) > 0 ? 1 : 0.4) : 1;
+      px(pin[0] - 3, pin[1] - 3, 6, 6, k); px(pin[0] - 2, pin[1] - 2, 4, 4, e ? corEstado(e) : C['ag-tela-off']); ctx.globalAlpha = 1;
+    });
+
+    // estante: uma seção de 12 escaninhos por relatório, acesos conforme o % lido
+    bloco(RACK.x0, 0, RACK.x1 - RACK.x0, 0.5, 66, C['ag-estante-topo'], C['ag-estante-esq'], C['ag-estante-dir']);
+    agentes.forEach(function (a) {
+      if (!a.secao) return;
+      var st = s ? s.ag[a.id] : { e: '', p: 0 }, sec = a.secao, e = st.e || '';
+      var cheias = e === 'ok' || e === 'erro' ? 12 : st.p === null ? 6 : Math.floor((st.p || 0) * 12), cw = (sec.w - 0.3) / 3;
+      for (var c = 0; c < 12; c++) {
+        var col = c % 3, lin = Math.floor(c / 3), xa = sec.x + 0.15 + col * cw + 0.08, za = 8 + lin * 14;
+        poli([iso(xa, 0.5, za), iso(xa + cw - 0.16, 0.5, za), iso(xa + cw - 0.16, 0.5, za + 10), iso(xa, 0.5, za + 10)], c < cheias && e && e !== 'parado' ? corEstado(e) : C['ag-escaninho']);
+      }
+      texto(sec.rotulo.slice(0, 18), iso(sec.x + sec.w / 2, 0, 74)[0], iso(sec.x + sec.w / 2, 0, 74)[1], C['text-support'], 'center');
+    });
+
+    var itens = [];
+    itens.push({ k: 6.5, f: function () { // balcão com a bandeja de envelopes
+      movel(1, 4.1, 5, 0.9, 14);
+      var e = s ? s.ag.importador.e : '', pilha = e === 'ok' ? 4 : e === 'executando' ? 1 + Math.floor((t * 2) % 3) : 0;
+      for (var i = 0; i < pilha; i++) { var b = iso(2.4, 4.6, 14 + i * 2); envelope(b[0], b[1]); }
+      texto('BALCÃO', iso(4.6, 5, 4)[0], iso(4.6, 5, 4)[1], C['text-support'], 'center');
+    } });
+    agentes.forEach(function (a) {
+      var st = s ? s.ag[a.id] : { e: '', p: 0, fala: '' };
+      if (a.secao) itens.push({ k: a.x + a.y + 1.8, f: function () { // mesa de triagem
+        movel(a.x - 0.2, a.y + 0.75, 1.4, 0.7, 12);
+        var b = iso(a.x + 0.5, a.y + 1.1, 12);
+        if (st.e !== 'ok') { envelope(b[0] - 6, b[1] - 2); envelope(b[0] + 4, b[1] - 1); }
+      } });
+      if (a.mesa) itens.push({ k: a.mesa[0] + a.mesa[1] + 0.8, f: function () { desenharMesa(a, st, t); } });
+      itens.push({ k: a.x + a.y + 1, f: function () { desenharPessoa(a, st, t); } });
+      if (a.bone) itens.push({ k: a.x + a.y + 2.2, f: function () { bicicleta(a.x + 1.3, a.y + 0.6); } });
+    });
+    anim.carrinhos.forEach(function (c) {
+      var p = PISTA.pontoEm(c.s);
+      itens.push({ k: p[0] + p[1] + 0.5, f: function () {
+        bloco(p[0] - 0.32, p[1] - 0.25, 0.64, 0.5, 9, C['ag-malote'], k, k);
+        var b = iso(p[0], p[1], 9); envelope(b[0] - 3, b[1] - 3); envelope(b[0] + 3, b[1] - 5);
+      } });
+    });
+    itens.push({ k: 34, f: function () { // furgão: sai quando o Payload JSON acaba de ser gerado
+      var f = saidaFurgao();
+      if (f === null) { furgao(19.6, 11.2); }
+      else {
+        var dx = f > 0.3 ? (f - 0.3) * (f - 0.3) * 40 : 0;
+        ctx.globalAlpha = Math.max(0, 1 - dx / 8); furgao(19.6 + dx, 11.2); ctx.globalAlpha = 1;
+      }
+      var js = s ? s.json : {};
+      if (js.fimTexto) texto('ÚLTIMA SAÍDA ' + curto(js.fimTexto), iso(22.6, 14.6, 0)[0], iso(22.6, 14.6, 0)[1] - 4, C['text-support'], 'center');
+    } });
+    itens.sort(function (a, b) { return a.k - b.k; }).forEach(function (i) { i.f(); });
+
+    anim.voando.forEach(function (e) {
+      var x = e.de[0] + (e.para[0] - e.de[0]) * e.f, y = e.de[1] + (e.para[1] - e.de[1]) * e.f - Math.sin(Math.PI * e.f) * 16;
+      envelope(x, y);
+    });
+
+    // crachás, balões e sinais por cima de tudo
+    agentes.forEach(function (a) {
+      var st = s ? s.ag[a.id] : { e: '', fala: '' }, tela = a._tela; if (!tela) return;
+      cracha(tela.x, tela.pe + 6, a.nome);
+      var mostra = selecionado === a.id || st.e === 'executando' || st.e === 'erro' || st.e === 'alerta' || st.e === 'aguardando' || (a.chefe && st.e === 'executando');
+      if (mostra) balao(tela.x, tela.topo, st.fala, st.e === 'erro' ? C['red-alert'] : st.e === 'alerta' ? C.violet : null);
+      else if (st.e === 'ok') { var cx = tela.x + 8, cy = tela.topo + 2; px(cx, cy + 2, 2, 2, C.emerald); px(cx + 2, cy + 4, 2, 2, C.emerald); px(cx + 4, cy + 2, 2, 2, C.emerald); px(cx + 6, cy, 2, 2, C.emerald); }
+      else texto('z', tela.x + 7, tela.topo + 2, st.e === 'agendado' ? C.blue : C['text-support']);
+    });
+  }
+
+  // fração da saída do furgão (0..1) logo depois de gerar o JSON; null = parado na doca
+  function saidaFurgao() {
+    var js = sit ? sit.json : null;
+    if (!js) return null;
+    if (js.estado === 'executando') return reduzir ? null : (anim.relogio % 3) / 3;
+    var agoraServ = sit.agora + (Date.now() - recebidoEm);
+    if (js.estado === 'ok' && js.fim && agoraServ - js.fim < 15000 && !reduzir) return Math.min(1, (agoraServ - js.fim) / 6000);
+    return null;
+  }
+
+  /* ---------- Movimento ---------- */
+  function atualizarMovimento(dt) {
+    var s = sit; if (!s) return;
+    // carrinhos: na triagem (relatórios) e para os carteiros (tracking), só em execução
+    ['cruzamentos', 'tracking'].forEach(function (etapa) {
+      if (!s.ativos[etapa]) return;
+      anim.proxCarro -= dt;
+      if (anim.proxCarro <= 0) { anim.carrinhos.push({ s: TRECHO[etapa][0], etapa: etapa }); anim.proxCarro = 1.3; }
+    });
+    anim.carrinhos = anim.carrinhos.filter(function (c) { if (!s.ativos[c.etapa]) return false; c.s += 1.5 * dt; return c.s < TRECHO[c.etapa][1]; });
+    // envelopes: fenda do Drive -> balcão; mesa de triagem -> escaninho
+    if (s.ativos.importacao) {
+      anim.proxEnv.imp = (anim.proxEnv.imp || 0) - dt;
+      if (anim.proxEnv.imp <= 0) { anim.voando.push({ de: iso(0, 3, 38), para: iso(2.4, 4.6, 14), f: 0, v: 1.6 }); anim.proxEnv.imp = 0.45; }
+    }
+    agentes.forEach(function (a) {
+      if (!a.secao || !s.ativos[a.id]) return;
+      anim.proxEnv[a.id] = (anim.proxEnv[a.id] || Math.random() * 0.4) - dt;
+      if (anim.proxEnv[a.id] <= 0) {
+        var st = s.ag[a.id], cel = Math.floor((st.p === null ? (anim.relogio % 1) : st.p) * 12) % 12;
+        anim.voando.push({ de: iso(a.x + 0.5, a.y + 0.5, 22), para: celula(a.secao, cel % 3, Math.floor(cel / 3)), f: 0, v: 2.2 });
+        anim.proxEnv[a.id] = 0.55;
+      }
+    });
+    anim.voando = anim.voando.filter(function (e) { e.f += dt * e.v; return e.f < 1; });
+  }
+  function caixasEmRepouso() {
+    anim.carrinhos = []; anim.voando = [];
+    if (!sit) return;
+    ['cruzamentos', 'tracking'].forEach(function (etapa) {
+      if (!sit.ativos[etapa]) return;
+      for (var x = TRECHO[etapa][0] + 0.4; x < TRECHO[etapa][1]; x += 2.4) anim.carrinhos.push({ s: x, etapa: etapa });
+    });
+  }
+
+  function visivel() {
+    var v = document.querySelector('.vista[data-vista="' + VISTA + '"]');
+    return montado && v && !v.hidden && !document.hidden;
+  }
+  function iniciar() {
+    if (anim.rodando || !visivel()) return;
+    dimensionar();
+    if (reduzir) { desenharCena(0); return; }
+    anim.rodando = true; anim.anterior = performance.now();
+    requestAnimationFrame(quadro);
+  }
+  function quadro(agora) {
+    if (!visivel()) { anim.rodando = false; return; }
+    var dt = Math.min(0.05, (agora - anim.anterior) / 1000); anim.anterior = agora;
+    anim.relogio += dt;
+    atualizarMovimento(dt);
+    desenharCena(anim.relogio);
+    requestAnimationFrame(quadro);
+  }
+  function dimensionar() {
+    var larg = canvas.clientWidth || LW, dpr = window.devicePixelRatio || 1;
+    if (canvas.width === Math.round(larg * dpr)) return;
+    escala = larg / LW;
+    canvas.width = Math.round(larg * dpr); canvas.height = Math.round(LH * escala * dpr);
+    canvas.style.height = (LH * escala) + 'px';
+    ctx.setTransform(escala * dpr, 0, 0, escala * dpr, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+  }
+
+  /* ---------- Equipe, ficha e malotes (HTML) ---------- */
+  function avatar(cv, a) {
+    var g = cv.getContext('2d'), k = C['ag-contorno']; g.imageSmoothingEnabled = false; g.clearRect(0, 0, 15, 15);
+    var f = function (x, y, w, h, c) { g.fillStyle = c; g.fillRect(x, y, w, h); };
+    f(4, 2, 7, 6, k); f(5, 3, 5, 4, C['ag-pele']); f(5, 3, 5, 1, C[a.cabelo]); f(6, 5, 1, 1, k); f(8, 5, 1, 1, k);
+    f(3, 8, 9, 6, k); f(4, 9, 7, 5, C[a.camisa]);
+    if (a.chefe) { f(4, 1, 7, 1, k); f(3, 2, 9, 1, k); }
+    if (a.bone) { f(4, 1, 7, 2, C['brand-accent']); f(9, 3, 3, 1, k); }
+  }
+  function montarLista() {
+    var lista = document.getElementById('agenciaEquipe');
+    lista.innerHTML = agentes.map(function (a) {
+      return '<li><button type="button" class="agente" data-agente="' + a.id + '" aria-pressed="false">' +
+        '<canvas class="agente-avatar" width="15" height="15" data-avatar="' + a.id + '"></canvas>' +
+        '<span class="agente-nome">' + escapar(a.nome + ' · ' + a.papel) + '</span><span class="chip chip-neutro"></span>' +
+        '<span class="agente-tarefa"></span><span class="agente-barra"><span></span></span></button></li>';
+    }).join('');
+    desenharAvatares();
+  }
+  function desenharAvatares() { document.querySelectorAll('#agenciaEquipe [data-avatar]').forEach(function (cv) { var a = agentePorId(cv.getAttribute('data-avatar')); if (a) avatar(cv, a); }); }
+
+  var SITUACAO_MALOTE = { '': 'Aguardando postagem', agendado: 'Postado', aguardando: 'Aguardando na unidade', ok: 'Entregue', alerta: 'Tentativa de entrega', erro: 'Devolvido ao remetente', parado: 'Cancelado' };
+  function desenharPainelHtml() {
+    if (!sit) return;
+    var chave = JSON.stringify([sit.ag, selecionado]);
+    if (chave === anim.ultimoPainel) return;
+    anim.ultimoPainel = chave;
+    document.querySelectorAll('#agenciaEquipe [data-agente]').forEach(function (b) {
+      var id = b.getAttribute('data-agente'), st = sit.ag[id] || { e: '', p: 0, fala: '' };
+      b.setAttribute('aria-pressed', String(selecionado === id));
+      var chip = b.querySelector('.chip'); chip.className = 'chip ' + (CHIPS[st.e] || 'chip-neutro'); chip.textContent = ROTULOS[st.e] || st.e;
+      b.querySelector('.agente-tarefa').textContent = st.fala;
+      var barra = b.querySelector('.agente-barra span');
+      barra.style.width = Math.round((st.e ? (st.p === null ? 0.5 : st.p) : 0) * 100) + '%';
+      barra.setAttribute('data-estado', st.e);
+    });
+    var a = agentePorId(selecionado) || agentes[0], st = sit.ag[a.id];
+    document.getElementById('agenciaFicha').innerHTML =
+      '<div class="ficha-topo"><canvas width="15" height="15" id="agenciaFichaAvatar"></canvas><div><div class="card-titulo">' + escapar(a.nome) + '</div>' +
+      '<div class="card-legenda">' + escapar(a.papel) + '</div></div></div><div class="ficha-fala">' + escapar(st.fala) + '</div>' +
+      '<dl><dt>Responsável por</dt><dd>' + escapar(a.tarefa) + '</dd>' +
+      '<dt>Estado</dt><dd><span class="chip ' + (CHIPS[st.e] || 'chip-neutro') + '">' + (ROTULOS[st.e] || st.e) + '</span></dd>' +
+      '<dt>Progresso</dt><dd>' + (!st.e ? '—' : st.p === null ? 'em leitura' : Math.round(st.p * 100) + '%') + '</dd>' +
+      '<dt>Etapa</dt><dd>' + ETAPAS[a.processo] + '</dd>' +
+      '<dt>Atualizado</dt><dd>' + escapar(st.quando || '—') + '</dd>' +
+      '<dt>Última mensagem</dt><dd class="ficha-msg">' + escapar(st.msg || '—') + '</dd></dl>';
+    avatar(document.getElementById('agenciaFichaAvatar'), a);
+
+    // rastreamento dos malotes: uma linha por etapa (um objeto por relatório)
+    var linhas = [{ ag: 'importador', conteudo: 'Protocolos', em: 'Em triagem' }];
+    agentes.forEach(function (x) { if (x.secao) linhas.push({ ag: x.id, conteudo: x.papel.replace('Triagem · ', ''), em: 'Em triagem' }); });
+    linhas.push({ ag: 'rastro', conteudo: 'Tracking (Reversa · Rastro · Jadlog)', em: 'Em trânsito' }, { ag: 'expedidor', conteudo: 'Payload JSON', em: 'Saiu para entrega' });
+    document.getElementById('agenciaMalotes').innerHTML = linhas.map(function (l, i) {
+      var s2 = sit.ag[l.ag], e = s2.e, txt = e === 'executando' ? l.em : SITUACAO_MALOTE[e];
+      var resp = l.ag === 'rastro' ? 'Beto · Nina · Rui' : agentePorId(l.ag).nome;
+      return '<tr><td class="mono">MP 000 ' + String(i + 1).padStart(3, '0') + ' BR</td><td>' + escapar(l.conteudo) + '</td><td>' + escapar(resp) + '</td>' +
+        '<td><span class="chip ' + (CHIPS[e] || 'chip-neutro') + '">' + txt + '</span></td>' +
+        '<td class="malote-detalhe" title="' + escapar(s2.msg || '') + '">' + escapar(s2.fala) + '</td><td class="numero">' + escapar(curto(s2.quando) || '—') + '</td></tr>';
+    }).join('');
+  }
+
+  /* ---------- API e eventos ---------- */
+  function montar() {
+    if (montado) return true;
+    canvas = document.getElementById('agenciaCena');
+    if (!canvas) return false;
+    ctx = canvas.getContext('2d');
+    lerCores();
+    montado = true;
+    canvas.addEventListener('click', function (e) {
+      var r = canvas.getBoundingClientRect(), x = (e.clientX - r.left) / escala, y = (e.clientY - r.top) / escala, melhor = null, dist = 26;
+      agentes.forEach(function (a) { if (!a._tela) return; var d = Math.hypot(a._tela.x - x, a._tela.pe - 18 - y); if (d < dist) { dist = d; melhor = a.id; } });
+      if (melhor) selecionar(melhor);
+    });
+    document.getElementById('agenciaEquipe').addEventListener('click', function (e) {
+      var b = e.target.closest('[data-agente]'); if (b) selecionar(b.getAttribute('data-agente'));
+    });
+    new MutationObserver(function () { lerCores(); desenharAvatares(); desenharPainelHtml(); if (reduzir) desenharCena(0); })
+      .observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    window.addEventListener('resize', function () { if (visivel()) { canvas.width = 0; dimensionar(); if (reduzir) desenharCena(0); } });
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { if (reduzir && visivel()) desenharCena(0); });
+    return true;
+  }
+  function selecionar(id) { selecionado = id; anim.ultimoPainel = ''; desenharPainelHtml(); if (reduzir) desenharCena(0); }
+
+  window.Agencia = {
+    // chamada pela tela a cada leitura de statusExecucoes()
+    atualizar: function (d) {
+      if (!montar() || !d || !d.processos) return;
+      var lista = (d.processos.cruzamentos && d.processos.cruzamentos.lista) || [];
+      var assinatura = lista.map(function (r) { return r.id; }).join(',');
+      if (assinatura !== assinaturaEquipe) { assinaturaEquipe = assinatura; agentes = montarEquipe(lista); montarLista(); }
+      var antes = sit ? JSON.stringify(sit.ativos) : '';
+      dados = d; recebidoEm = Date.now(); sit = situacao(d);
+      if (antes !== JSON.stringify(sit.ativos)) caixasEmRepouso();
+      desenharPainelHtml();
+      if (reduzir) { dimensionar(); desenharCena(0); } else iniciar();
+    }
+  };
+
+  document.addEventListener('vistamostrada', function (e) { if (e.detail === VISTA && montado) { canvas.width = 0; iniciar(); } });
+  document.addEventListener('visibilitychange', function () { if (montado) iniciar(); });
+})();
+</script>

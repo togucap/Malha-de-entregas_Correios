@@ -27,22 +27,42 @@
 
   <div class="aviso aviso-info" id="avisoPainel" role="status" hidden></div>
 
-  <!-- cadeia: protocolos -> relatórios -> tracking -> JSON -->
+  <!-- cadeia desenhada como agência de triagem (js/Agencia): cada funcionário é responsável por uma tarefa -->
   <div class="card-container">
     <div class="painel-cabecalho">
       <div>
-        <div class="card-titulo">Cadeia de atualização</div>
-        <div class="card-legenda">Protocolos → Relatórios do Drive → Tracking → Payload JSON. Ao importar os protocolos, as demais etapas seguem sozinhas.</div>
+        <div class="card-titulo">Agência de triagem</div>
+        <div class="card-legenda">Balcão (protocolos) → Triagem (relatórios do Drive) → Carteiros (tracking) → Expedição (Payload JSON). Clique em alguém para ver a ficha.</div>
       </div>
       <span class="chip chip-neutro" id="cadeiaChip">Sem registro</span>
     </div>
-    <!-- esteira animada (js/Esteira): polo = etapa, luz = estado, visor = progresso -->
-    <div class="esteira-rolagem">
-      <svg id="esteiraCena" class="esteira-cena" viewBox="0 78 1280 322" role="img"
-           aria-label="Esteira da cadeia: calha do Drive, polos Protocolos, Relatórios e Tracking, operadores carregando caixas e a doca do Payload JSON"></svg>
+    <div class="agencia-rolagem">
+      <canvas id="agenciaCena" class="agencia-cena" role="img"
+              aria-label="Agência de triagem: balcão com a fenda do Drive, estante de escaninhos com um separador por relatório, três carteiros com o mapa de rotas, chefe da agência e furgão da expedição"></canvas>
     </div>
-    <ol class="esteira-trilha" id="esteiraTrilha" aria-label="Etapas da cadeia"></ol>
     <p class="texto-apoio painel-nota" id="cadeiaInfo"></p>
+  </div>
+
+  <!-- rastreamento dos malotes: uma linha por etapa -->
+  <div class="card-container">
+    <div class="card-titulo">Rastreamento dos malotes</div>
+    <div class="card-legenda">Postado = na fila · Em triagem / Em trânsito / Saiu para entrega = em execução · Aguardando na unidade = esperando continuação · Entregue = concluído · Tentativa de entrega = atenção · Devolvido ao remetente = erro</div>
+    <div class="tabela-caixa malotes-caixa">
+      <table class="tabela malotes">
+        <thead><tr><th>Objeto</th><th>Conteúdo</th><th>Responsável</th><th>Situação</th><th>Detalhe</th><th>Atualizado</th></tr></thead>
+        <tbody id="agenciaMalotes"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- equipe + ficha -->
+  <div class="agencia-equipe">
+    <div class="card-container">
+      <div class="card-titulo">Equipe</div>
+      <div class="card-legenda">Um responsável por tarefa; a triagem tem um separador por relatório de CRUZAMENTOS</div>
+      <ul class="lista-equipe" id="agenciaEquipe"></ul>
+    </div>
+    <div class="card-container agencia-ficha" id="agenciaFicha" aria-live="polite"></div>
   </div>
 
   <div class="painel-grade">
@@ -73,25 +93,8 @@
       <p class="painel-mensagem" id="trackingMensagem"></p>
     </div>
 
-    <!-- painel de luzes: relatórios do Drive e saída -->
+    <!-- legenda e acionadores -->
     <div class="card-container">
-      <div class="painel-cabecalho">
-        <div>
-          <div class="card-titulo">Relatórios do Drive</div>
-          <div class="card-legenda">Clique numa luz para ver o resultado da última leitura</div>
-        </div>
-        <span class="chip chip-neutro" id="relatoriosChip">Sem registro</span>
-      </div>
-      <div class="painel-luzes" id="painelLuzes" role="list"></div>
-      <div class="placa-detalhe" id="placaDetalhe" hidden>
-        <div class="placa-detalhe-titulo" id="placaDetalheTitulo"></div>
-        <p class="painel-mensagem" id="placaDetalheTexto"></p>
-      </div>
-    </div>
-  </div>
-
-  <!-- legenda e acionadores -->
-  <div class="card-container">
     <div class="painel-rodape">
       <div>
         <div class="card-titulo">Legenda</div>
@@ -103,6 +106,7 @@
           <li><span class="luz luz-p" data-estado="alerta"></span>Atenção (parcial / nova tentativa)</li>
           <li><span class="luz luz-p" data-estado="erro"></span>Erro</li>
           <li><span class="luz luz-p" data-estado=""></span>Sem registro / cancelado</li>
+          <li class="texto-apoio">Na agência, a mesma cor acende sobre a cabeça de cada funcionário.</li>
         </ul>
       </div>
       <div>
@@ -112,5 +116,6 @@
       </div>
     </div>
     <p class="texto-apoio painel-nota" id="painelLido"></p>
+    </div>
   </div>
 </section>
