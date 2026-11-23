@@ -75,9 +75,11 @@
 }
 
 .placa {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+  /* 1ª linha com altura de duas linhas de plaqueta: nome curto ou quebrado, as luzes ficam alinhadas */
+  display: grid;
+  grid-template-rows: 36px auto auto auto;
+  justify-items: center;
+  align-content: start;
   gap: 8px;
   padding: 12px 8px;
   min-width: 0;
@@ -96,6 +98,7 @@
 
 /* plaqueta com o nome, como a etiqueta acima de cada lâmpada */
 .placa-rotulo {
+  align-self: end;
   max-width: 100%;
   padding: 2px 8px;
   border-radius: 8px;
