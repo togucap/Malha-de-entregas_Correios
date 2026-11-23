@@ -32,16 +32,16 @@
     <div class="painel-cabecalho">
       <div>
         <div class="card-titulo">Cadeia de atualização</div>
-        <div class="card-legenda">Ao importar os protocolos, os relatórios do Drive, o tracking e o Payload_Tracking são atualizados em sequência, sozinhos.</div>
+        <div class="card-legenda">Protocolos → Relatórios do Drive → Tracking → Payload JSON. Ao importar os protocolos, as demais etapas seguem sozinhas.</div>
       </div>
       <span class="chip chip-neutro" id="cadeiaChip">Sem registro</span>
     </div>
-    <ol class="cadeia" id="cadeiaEtapas">
-      <li class="estacao" data-etapa="importacao"><span class="luz" data-estado=""></span><div class="estacao-nome">Protocolos</div><div class="estacao-estado"></div><div class="estacao-hora"></div></li>
-      <li class="estacao" data-etapa="cruzamentos"><span class="luz" data-estado=""></span><div class="estacao-nome">Relatórios do Drive</div><div class="estacao-estado"></div><div class="estacao-hora"></div></li>
-      <li class="estacao" data-etapa="tracking"><span class="luz" data-estado=""></span><div class="estacao-nome">Tracking</div><div class="estacao-estado"></div><div class="estacao-hora"></div></li>
-      <li class="estacao" data-etapa="json"><span class="luz" data-estado=""></span><div class="estacao-nome">Payload_Tracking</div><div class="estacao-estado"></div><div class="estacao-hora"></div></li>
-    </ol>
+    <!-- esteira animada (js/Esteira): polo = etapa, luz = estado, visor = progresso -->
+    <div class="esteira-rolagem">
+      <svg id="esteiraCena" class="esteira-cena" viewBox="0 78 1280 322" role="img"
+           aria-label="Esteira da cadeia: calha do Drive, polos Protocolos, Relatórios e Tracking, operadores carregando caixas e a doca do Payload JSON"></svg>
+    </div>
+    <ol class="esteira-trilha" id="esteiraTrilha" aria-label="Etapas da cadeia"></ol>
     <p class="texto-apoio painel-nota" id="cadeiaInfo"></p>
   </div>
 

@@ -1,0 +1,371 @@
+<script>
+/*
+ * Esteira de execuções (vista Cruzamentos): cena animada da cadeia
+ *   calha do Drive → polo Protocolos → esteira → polo Relatórios → esteira → polo Tracking → doca Payload JSON.
+ * - Polo = etapa; luz da escotilha = estado (cores do painel); visor = progresso da etapa.
+ * - Esteira e operador só trabalham na etapa "executando"; em "aguardando" (esperando a continuação
+ *   automática) ficam parados com a luz laranja; em alerta/erro o operador levanta o braço.
+ * - Caixas = dados (efeito visual; não representam linhas específicas).
+ *
+ * Uso: Esteira.atualizar(processos)  (processos = statusExecucoes().processos, ver gs/StatusExecucoes)
+ * A animação só roda com a vista aberta e a aba do navegador visível; com "reduzir movimento"
+ * no sistema a cena fica parada mostrando o estado.
+ */
+(function () {
+  var NS = 'http://www.w3.org/2000/svg';
+  var VISTA = 'cruzamentos';
+  var CHAO = 380, ESTEIRA_Y = 300, CX = 22, LARG = 160, VELOCIDADE = 95;
+  var POLOS = [
+    { id: 'importacao', placa: 'PROTOCOLOS', x: 120 },
+    { id: 'cruzamentos', placa: 'RELATÓRIOS', x: 560 },
+    { id: 'tracking', placa: 'TRACKING', x: 1000 }
+  ];
+  // 0 = calha do Drive -> Protocolos; 1 e 2 = operador -> próximo polo; 3 = Tracking -> doca JSON
+  var ESTEIRAS = [
+    { x1: 38, x2: 120, etapa: 'importacao' },
+    { x1: 380, x2: 560, etapa: 'cruzamentos' },
+    { x1: 820, x2: 1000, etapa: 'tracking' },
+    { x1: 1160, x2: 1226, etapa: 'json' }
+  ];
+  var ETAPAS = ['importacao', 'cruzamentos', 'tracking', 'json'];
+  var NOMES = { importacao: 'Protocolos', cruzamentos: 'Relatórios do Drive', tracking: 'Tracking', json: 'Payload JSON' };
+  var ROTULOS = { '': 'Sem registro', agendado: 'Na fila', executando: 'Em execução', aguardando: 'Aguardando continuação', ok: 'Concluído', alerta: 'Atenção', erro: 'Erro', parado: 'Cancelado' };
+  var CHIPS = { '': 'chip-neutro', parado: 'chip-neutro', agendado: 'chip-info', executando: 'chip-marca', aguardando: 'chip-marca', ok: 'chip-sucesso', alerta: 'chip-divergencia', erro: 'chip-erro' };
+
+  var svg, camadaCaixas, marcas = [], operadores = {}, docaLuz, docaDoc, trilha;
+  var reduzir = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var sit = { e: {}, p: {}, d: {}, atual: {} };
+  var anim = { rodando: false, anterior: 0, caixas: [], proxQueda: 0, marca: [0, 0, 0, 0], fases: { 1: 0, 2: 0 } };
+
+  function el(tag, attrs, pai) {
+    var e = document.createElementNS(NS, tag);
+    for (var k in attrs) e.setAttribute(k, attrs[k]);
+    (pai || svg).appendChild(e);
+    return e;
+  }
+
+  /* ---------- Montagem da cena ---------- */
+
+  function montar() {
+    svg = document.getElementById('esteiraCena');
+    trilha = document.getElementById('esteiraTrilha');
+    if (!svg || svg.childNodes.length) return;
+
+    el('line', { x1: 0, y1: CHAO, x2: 1280, y2: CHAO, class: 'es-chao' });
+    // calha do Drive
+    el('rect', { x: 20, y: 120, width: 40, height: 172, rx: 4, class: 'es-calha' });
+    el('rect', { x: 26, y: 120, width: 28, height: 172, class: 'es-boca' });
+    placa(40, 'DRIVE', 92, 76);
+
+    // operadores (atrás das esteiras) com o palete ao lado
+    [1, 2].forEach(function (k) {
+      var px = ESTEIRAS[k].x1 - 88;
+      el('rect', { x: px, y: CHAO - 8, width: 34, height: 8, rx: 2, class: 'es-palete' });
+      caixa(px + 6, CHAO - 8 - CX, el('g', {}));
+      caixa(px + 6, CHAO - 8 - 2 * CX, el('g', {}));
+      operadores[k] = criarOperador(ESTEIRAS[k].x1 - 36, px + 17, CHAO - 8 - 2 * CX);
+    });
+
+    // esteiras
+    ESTEIRAS.forEach(function (e, i) {
+      for (var x = e.x1 + 14; x < e.x2 - 6; x += 56) el('rect', { x: x, y: ESTEIRA_Y + 18, width: 6, height: CHAO - ESTEIRA_Y - 18, class: 'es-suporte' });
+      el('rect', { x: e.x1, y: ESTEIRA_Y, width: e.x2 - e.x1, height: 18, rx: 9, class: 'es-lona' });
+      marcas[i] = el('line', { x1: e.x1 + 10, y1: ESTEIRA_Y + 5, x2: e.x2 - 10, y2: ESTEIRA_Y + 5, class: 'es-marca', 'stroke-dasharray': '4 12' });
+      el('circle', { cx: e.x1 + 9, cy: ESTEIRA_Y + 9, r: 7, class: 'es-rolo' });
+      el('circle', { cx: e.x2 - 9, cy: ESTEIRA_Y + 9, r: 7, class: 'es-rolo' });
+    });
+
+    camadaCaixas = el('g', {}); // por baixo dos polos: a caixa "entra" no polo
+
+    POLOS.forEach(function (p) {
+      var x = p.x, g = el('g', { 'data-estado': '' });
+      p.g = g;
+      el('rect', { x: x + 10, y: 345, width: 24, height: CHAO - 345, class: 'es-pe' }, g);
+      el('rect', { x: x + LARG - 34, y: 345, width: 24, height: CHAO - 345, class: 'es-pe' }, g);
+      el('path', { d: 'M' + x + ',345 V215 A80,80 0 0 1 ' + (x + LARG) + ',215 V345 Z', class: 'es-cupula' }, g);
+      el('rect', { x: x - 4, y: 330, width: LARG + 8, height: 16, rx: 4, class: 'es-base' }, g);
+      el('rect', { x: x - 3, y: ESTEIRA_Y - 6, width: 12, height: 30, rx: 3, class: 'es-boca' }, g);
+      el('rect', { x: x + LARG - 9, y: ESTEIRA_Y - 6, width: 12, height: 30, rx: 3, class: 'es-boca' }, g);
+      p.halo = el('circle', { cx: x + 80, cy: 186, r: 30, opacity: 0, class: 'es-halo' }, g);
+      el('circle', { cx: x + 80, cy: 186, r: 22, class: 'es-aro' }, g);
+      p.luz = el('circle', { cx: x + 80, cy: 186, r: 14, class: 'es-luz' }, g);
+      p.sinal = el('text', { x: x + 80, y: 192, 'text-anchor': 'middle', class: 'es-sinal', opacity: 0 }, g);
+      p.sinal.textContent = '!';
+      var clip = el('clipPath', { id: 'esteira-visor-' + p.id }, g);
+      el('rect', { x: x + 32, y: 226, width: 96, height: 56, rx: 6 }, clip);
+      el('rect', { x: x + 32, y: 226, width: 96, height: 56, rx: 6, class: 'es-visor' }, g);
+      p.nivel = el('rect', { x: x + 32, y: 282, width: 96, height: 0, 'clip-path': 'url(#esteira-visor-' + p.id + ')', class: 'es-nivel' }, g);
+      p.pct = el('text', { x: x + 80, y: 260, 'text-anchor': 'middle', class: 'es-pct' }, g);
+      p.pct.textContent = '—';
+      placa(x + 80, p.placa, 92, 122);
+    });
+
+    // doca do Payload JSON
+    el('rect', { x: 1228, y: 316, width: 44, height: CHAO - 316, rx: 4, class: 'es-base' });
+    placa(1250, 'JSON', 92, 70);
+    var gLuz = el('g', { 'data-estado': '' });
+    docaLuz = gLuz;
+    el('circle', { cx: 1250, cy: 300, r: 7, class: 'es-luz' }, gLuz);
+    docaDoc = el('g', { opacity: 0 });
+    el('path', { d: 'M1234,330 h22 l8,8 v30 h-30 Z', class: 'es-doc' }, docaDoc);
+    var t = el('text', { x: 1249, y: 358, 'text-anchor': 'middle', class: 'es-doc-txt' }, docaDoc);
+    t.textContent = '{ }';
+
+    trilha.innerHTML = ETAPAS.map(function (id) {
+      return '<li data-etapa="' + id + '"><span class="luz" data-estado=""></span><div class="trilha-texto"><div class="trilha-linha">' +
+        '<span class="trilha-nome">' + NOMES[id] + '</span><span class="chip chip-neutro">Sem registro</span></div>' +
+        '<div class="trilha-detalhe"></div></div></li>';
+    }).join('');
+    desenhar(performance.now());
+  }
+
+  function placa(cx, texto, y, largura) {
+    var w = Math.max(largura || 0, texto.length * 9.5 + 22);
+    el('rect', { x: cx - w / 2, y: y, width: w, height: 24, rx: 6, class: 'es-placa' });
+    el('text', { x: cx, y: y + 16.5, 'text-anchor': 'middle', class: 'es-placa-txt' }).textContent = texto;
+  }
+
+  // caixa com frente, topo, lado e a fita em X
+  function caixa(x, y, g) {
+    el('path', { d: 'M' + x + ',' + y + ' l6,-6 h' + CX + ' l-6,6 Z', class: 'es-cx-topo' }, g);
+    el('path', { d: 'M' + (x + CX) + ',' + y + ' l6,-6 v' + CX + ' l-6,6 Z', class: 'es-cx-lado' }, g);
+    el('rect', { x: x, y: y, width: CX, height: CX, class: 'es-cx-frente' }, g);
+    el('path', { d: 'M' + (x + 4) + ',' + (y + 4) + ' L' + (x + CX - 4) + ',' + (y + CX - 4) + ' M' + (x + CX - 4) + ',' + (y + 4) + ' L' + (x + 4) + ',' + (y + CX - 4), class: 'es-cx-fita' }, g);
+    return g;
+  }
+
+  function criarOperador(x, paleteX, paleteTopo) {
+    var g = el('g', {});
+    return {
+      x: x, paleteX: paleteX, paleteTopo: paleteTopo,
+      pernaE: el('line', { class: 'es-op' }, g), pernaD: el('line', { class: 'es-op' }, g),
+      tronco: el('line', { class: 'es-op' }, g),
+      bracoE: el('line', { class: 'es-op' }, g), bracoD: el('line', { class: 'es-op' }, g),
+      cabeca: el('circle', { r: 11, class: 'es-op-cabeca' }, g),
+      capacete: el('path', { class: 'es-capacete' }, g),
+      carga: caixa(-CX / 2, -CX / 2, el('g', { opacity: 0 }, g))
+    };
+  }
+
+  /* ---------- Estado vindo do servidor ---------- */
+
+  function curto(texto) { return String(texto || '').slice(0, 16).replace(/^(\d{2}\/\d{2})\/\d{4}/, '$1'); }
+  function numero(n) { return Number(n || 0).toLocaleString('pt-BR'); }
+
+  function situacao(p) {
+    var e = {}, prog = {}, d = {}, atual = {};
+    ETAPAS.forEach(function (id) { e[id] = (p[id] && p[id].estado) || ''; });
+
+    // protocolos: sem progresso conhecido durante a leitura (null = visor "lendo")
+    var imp = p.importacao || {};
+    prog.importacao = e.importacao === 'ok' ? 1 : e.importacao === 'executando' ? null : e.importacao ? 0 : 0;
+    d.importacao = e.importacao === 'executando' ? 'Lendo ' + (imp.arquivo || 'Consolidado_Protocolos')
+      : e.importacao === 'ok' ? 'Concluída · ' + curto(imp.fimTexto)
+      : e.importacao ? (imp.mensagem || ROTULOS[e.importacao]) : 'Sem execução registrada';
+
+    // relatórios: concluídos + fração do que está sendo lido
+    var cz = p.cruzamentos || {}, lista = cz.lista || [];
+    var feitos = 0, daVez = null, comErro = 0;
+    lista.forEach(function (r) {
+      if (r.estado === 'ok' || r.estado === 'erro' || r.estado === 'alerta') feitos += 1;
+      if (r.estado === 'erro') comErro++;
+      if ((r.estado === 'executando' || r.estado === 'aguardando') && !daVez) { daVez = r; feitos += (r.progresso || 0) / 100; }
+    });
+    prog.cruzamentos = e.cruzamentos === 'ok' ? 1 : lista.length ? feitos / lista.length : 0;
+    d.cruzamentos = daVez ? (daVez.rotulo || daVez.arquivo) + (daVez.progresso ? ' · ' + daVez.progresso + '% lido' : ' · lendo')
+      : e.cruzamentos === 'ok' ? lista.length + ' relatório(s) lido(s) · ' + curto(cz.fimTexto)
+      : e.cruzamentos === 'alerta' ? comErro + ' com erro · ' + curto(cz.fimTexto)
+      : e.cruzamentos ? (cz.mensagem || ROTULOS[e.cruzamentos]) : 'Sem execução registrada';
+
+    // tracking: linhas consultadas no ciclo
+    var tk = p.tracking || {}, pr = tk.progresso || { feitas: 0, restantes: 0 };
+    var total = (pr.feitas || 0) + (pr.restantes || 0);
+    prog.tracking = e.tracking === 'ok' ? 1 : total ? pr.feitas / total : 0;
+    d.tracking = e.tracking === 'ok' ? 'Ciclo concluído · ' + curto(tk.ultimaConclusaoTexto || tk.execucaoFimTexto)
+      : total ? numero(pr.feitas) + ' de ' + numero(total) + ' linhas'
+      : e.tracking ? (tk.mensagem || ROTULOS[e.tracking]) : 'Sem execução registrada';
+
+    var js = p.json || {};
+    prog.json = e.json === 'ok' ? 1 : 0;
+    d.json = e.json === 'ok' ? numero(js.totalPedidos) + ' pedidos · ' + curto(js.fimTexto)
+      : e.json ? (js.mensagem || ROTULOS[e.json]) : 'Gera no fim do tracking';
+
+    // etapa atual: a da cadeia em andamento e qualquer processo rodando
+    var cadeia = p.cadeia || {};
+    ETAPAS.forEach(function (id) {
+      atual[id] = e[id] === 'executando' || e[id] === 'aguardando' || (cadeia.estado === 'executando' && cadeia.etapa === id);
+    });
+    return { e: e, p: prog, d: d, atual: atual };
+  }
+
+  /* ---------- Desenho ---------- */
+
+  function desenhar(agora) {
+    POLOS.forEach(function (p) {
+      var estado = sit.e[p.id] || '';
+      p.g.setAttribute('data-estado', estado);
+      var acesa = estado && estado !== 'parado';
+      var pulso = estado === 'executando' && !reduzir ? 0.5 + 0.5 * Math.sin(agora / 190) : 1;
+      p.halo.setAttribute('opacity', acesa && estado !== 'aguardando' ? (0.12 + 0.18 * pulso).toFixed(2) : 0);
+      p.luz.setAttribute('opacity', estado === 'executando' ? (0.6 + 0.4 * pulso).toFixed(2) : 1);
+      p.sinal.setAttribute('opacity', estado === 'alerta' || estado === 'erro' ? 1 : 0);
+      var frac = sit.p[p.id];
+      var lendo = frac === null || frac === undefined;
+      // leitura sem progresso conhecido: o nível sobe e desce devagar
+      var nivel = lendo ? (reduzir ? 0.5 : 0.35 + 0.25 * Math.sin(agora / 600)) : frac;
+      var h = 56 * Math.max(0, Math.min(1, nivel));
+      p.nivel.setAttribute('y', (282 - h).toFixed(1));
+      p.nivel.setAttribute('height', h.toFixed(1));
+      p.pct.textContent = !estado ? '—' : lendo ? 'lendo' : Math.round(frac * 100) + '%';
+    });
+    docaLuz.setAttribute('data-estado', sit.e.json || '');
+    docaDoc.setAttribute('opacity', sit.e.json === 'ok' ? 1 : 0);
+
+    [1, 2].forEach(function (k) {
+      var estado = sit.e[ESTEIRAS[k].etapa];
+      var modo = estado === 'alerta' || estado === 'erro' ? 'sinal' : estado === 'executando' ? 'trabalhando' : 'parado';
+      desenharOperador(operadores[k], anim.fases[k], modo);
+    });
+  }
+
+  // operador: pega a caixa do palete, vira e põe na esteira (fase 0..1)
+  function desenharOperador(op, fase, modo) {
+    var hipX = op.x, hipY = CHAO - 45, lean = 0, mao = null, segurando = false;
+    var ombroDe = function (l) { return { x: hipX + 45 * Math.sin(l), y: hipY - 45 * Math.cos(l) }; };
+    var ease = function (a) { return a * a * (3 - 2 * a); };
+    var esteiraX = op.x + 40, esteiraMao = ESTEIRA_Y - CX / 2 - 2;
+    if (modo === 'trabalhando') {
+      if (fase < 0.3) { var a = ease(fase / 0.3); lean = -0.55 * a; var o = ombroDe(lean); mao = mix(o.x + 4, op.paleteX, a, o.y + 36, op.paleteTopo + 4); }
+      else if (fase < 0.55) { var b = ease((fase - 0.3) / 0.25); lean = -0.55 + 0.65 * b; var o2 = ombroDe(lean); mao = mix(op.paleteX, o2.x + 16, b, op.paleteTopo + 4, o2.y + 14); segurando = true; }
+      else if (fase < 0.72) { var c = ease((fase - 0.55) / 0.17); lean = 0.1 + 0.15 * c; var o3 = ombroDe(lean); mao = mix(o3.x + 16, esteiraX, c, o3.y + 14, esteiraMao); segurando = true; }
+      else { var d = ease((fase - 0.72) / 0.28); lean = 0.25 * (1 - d); var o4 = ombroDe(lean); mao = mix(esteiraX, o4.x + 4, d, esteiraMao, o4.y + 36); }
+    }
+    var ombro = ombroDe(lean);
+    if (!mao) mao = { x: ombro.x + 4, y: ombro.y + 36 };
+    var maoE = mao, maoD = { x: mao.x + 5, y: mao.y + 2 };
+    if (modo === 'sinal') { maoD = { x: ombro.x + 8, y: ombro.y - 36 }; maoE = { x: ombro.x - 3, y: ombro.y + 36 }; }
+    linha(op.pernaE, hipX, hipY, hipX - 10, CHAO);
+    linha(op.pernaD, hipX, hipY, hipX + 10, CHAO);
+    linha(op.tronco, hipX, hipY, ombro.x, ombro.y);
+    linha(op.bracoE, ombro.x, ombro.y, maoE.x, maoE.y);
+    linha(op.bracoD, ombro.x, ombro.y, maoD.x, maoD.y);
+    var cab = { x: hipX + 62 * Math.sin(lean), y: hipY - 62 * Math.cos(lean) };
+    op.cabeca.setAttribute('cx', cab.x.toFixed(1));
+    op.cabeca.setAttribute('cy', cab.y.toFixed(1));
+    op.capacete.setAttribute('d', 'M' + (cab.x - 13).toFixed(1) + ',' + (cab.y - 2).toFixed(1) + ' A13,13 0 0 1 ' + (cab.x + 13).toFixed(1) + ',' + (cab.y - 2).toFixed(1) + ' Z');
+    op.carga.setAttribute('opacity', segurando ? 1 : 0);
+    op.carga.setAttribute('transform', 'translate(' + mao.x.toFixed(1) + ',' + (mao.y - 4).toFixed(1) + ')');
+  }
+  function mix(x1, x2, a, y1, y2) { return { x: x1 + (x2 - x1) * a, y: y1 + (y2 - y1) * a }; }
+  function linha(l, x1, y1, x2, y2) { l.setAttribute('x1', x1.toFixed(1)); l.setAttribute('y1', y1.toFixed(1)); l.setAttribute('x2', x2.toFixed(1)); l.setAttribute('y2', y2.toFixed(1)); }
+
+  function desenharTrilha() {
+    trilha.querySelectorAll('li').forEach(function (li) {
+      var id = li.getAttribute('data-etapa'), e = sit.e[id] || '';
+      li.querySelector('.luz').setAttribute('data-estado', e);
+      var chip = li.querySelector('.chip');
+      chip.className = 'chip ' + (CHIPS[e] || 'chip-neutro');
+      chip.textContent = ROTULOS[e] || e;
+      var det = li.querySelector('.trilha-detalhe');
+      det.textContent = sit.d[id] || '';
+      det.title = sit.d[id] || '';
+      li.classList.toggle('atual', !!sit.atual[id]);
+    });
+  }
+
+  /* ---------- Caixas e laço da animação ---------- */
+
+  function novaCaixa(esteira, x, y, queda) {
+    var g = el('g', {}, camadaCaixas);
+    caixa(-CX / 2, -CX, g);
+    g.setAttribute('transform', 'translate(' + x + ',' + y + ')');
+    anim.caixas.push({ g: g, esteira: esteira, x: x, y: y, vy: 0, queda: !!queda });
+  }
+
+  function limparCaixas() { anim.caixas.forEach(function (c) { c.g.remove(); }); anim.caixas = []; }
+
+  function ativa(i) { return sit.e[ESTEIRAS[i].etapa] === 'executando'; }
+
+  // posição de repouso (reduzir movimento ou ao trocar de estado): caixas espalhadas na esteira ativa
+  function caixasParadas() {
+    limparCaixas();
+    [1, 2].forEach(function (i) {
+      if (ativa(i)) for (var x = ESTEIRAS[i].x1 + 40; x < ESTEIRAS[i].x2 - 20; x += 60) novaCaixa(i, x, ESTEIRA_Y);
+    });
+  }
+
+  function visivel() {
+    var v = document.querySelector('.vista[data-vista="' + VISTA + '"]');
+    return !!svg && v && !v.hidden && !document.hidden;
+  }
+
+  function iniciar() {
+    if (anim.rodando || reduzir || !visivel()) return;
+    anim.rodando = true;
+    anim.anterior = performance.now();
+    requestAnimationFrame(quadro);
+  }
+
+  function quadro(agora) {
+    if (!visivel()) { anim.rodando = false; return; } // para de gastar CPU com a vista fechada
+    var dt = Math.min(0.05, (agora - anim.anterior) / 1000);
+    anim.anterior = agora;
+
+    if (ativa(0)) { // calha do Drive alimentando os protocolos
+      anim.proxQueda -= dt;
+      if (anim.proxQueda <= 0) { novaCaixa(0, 40, 130, true); anim.proxQueda = 0.75; }
+    }
+    if (ativa(3) && !anim.caixas.some(function (c) { return c.esteira === 3; })) novaCaixa(3, 1160, ESTEIRA_Y);
+
+    [1, 2].forEach(function (k) {
+      if (!ativa(k)) return;
+      var f0 = anim.fases[k];
+      anim.fases[k] = (f0 + dt / 1.4) % 1;
+      if (f0 < 0.72 && anim.fases[k] >= 0.72) novaCaixa(k, ESTEIRAS[k].x1 + 30, ESTEIRA_Y); // soltou na esteira
+    });
+
+    anim.caixas = anim.caixas.filter(function (c) {
+      var est = ESTEIRAS[c.esteira];
+      if (c.queda) {
+        c.vy += 900 * dt; c.y += c.vy * dt;
+        if (c.y >= ESTEIRA_Y) { c.y = ESTEIRA_Y; c.queda = false; }
+      } else if (ativa(c.esteira)) {
+        c.x += VELOCIDADE * dt;
+      }
+      c.g.setAttribute('transform', 'translate(' + c.x.toFixed(1) + ',' + c.y.toFixed(1) + ')');
+      if (c.x >= est.x2 + CX) { c.g.remove(); return false; } // entrou no polo
+      return true;
+    });
+
+    ESTEIRAS.forEach(function (e, i) {
+      if (!ativa(i)) return;
+      anim.marca[i] -= VELOCIDADE * dt;
+      marcas[i].setAttribute('stroke-dashoffset', anim.marca[i].toFixed(1));
+    });
+
+    desenhar(agora);
+    requestAnimationFrame(quadro);
+  }
+
+  /* ---------- API ---------- */
+
+  window.Esteira = {
+    // chamada pela tela a cada leitura de statusExecucoes()
+    atualizar: function (processos) {
+      montar();
+      if (!svg) return;
+      var antes = JSON.stringify(sit.e);
+      sit = situacao(processos || {});
+      // mudou o que está ativo: recomeça as caixas na posição de repouso
+      if (antes !== JSON.stringify(sit.e)) caixasParadas();
+      desenhar(performance.now());
+      desenharTrilha();
+      iniciar();
+    }
+  };
+
+  document.addEventListener('DOMContentLoaded', montar);
+  document.addEventListener('vistamostrada', function (e) { if (e.detail === VISTA) iniciar(); });
+  document.addEventListener('visibilitychange', iniciar);
+})();
+</script>

@@ -115,17 +115,8 @@
 
   function desenharCadeia(p) {
     var c = p.cadeia;
-    var andamento = c.estado === 'executando';
-    document.querySelectorAll('#cadeiaEtapas .estacao').forEach(function (li) {
-      var etapa = li.getAttribute('data-etapa');
-      var s = p[etapa] || {};
-      luz(li.querySelector('.luz'), s.estado);
-      li.querySelector('.estacao-estado').textContent = ROTULOS[s.estado || ''] || s.estado;
-      li.querySelector('.estacao-hora').textContent = curto(s.fimTexto || s.execucaoFimTexto || s.inicioTexto || '');
-      // o JSON não é etapa própria da cadeia: é gerado no fim do tracking
-      li.classList.toggle('atual', andamento && c.etapa === etapa);
-      li.title = s.mensagem || '';
-    });
+    // esteira animada e trilha de etapas (js/Esteira)
+    if (window.Esteira) Esteira.atualizar(p);
     chip($('cadeiaChip'), c.estado, c.estado === 'executando' ? 'Em andamento · ' + (NOMES_ETAPA[c.etapa] || c.etapa) : null);
     $('cadeiaInfo').textContent = c.inicio
       ? 'Última cadeia: iniciada em ' + c.inicioTexto + ' ' + origem(c.origem) +
