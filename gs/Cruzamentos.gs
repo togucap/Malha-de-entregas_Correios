@@ -37,7 +37,7 @@ const CRUZAMENTOS = [
     id: 'parceiros',
     rotulo: 'Anymarket OUT',
     pasta: '1Zk2F78ImtNqEDF_pULHe-74qwxaMH2xe',
-    arquivo: 'Consolidado_Anymarket_OUT', // "_OUT" = parceiros externos; acha .xlsx ou .csv
+    arquivo: 'Consolidado_Anymarket_OUT', // "_OUT" = parceiros externos; hoje .csv (também acharia .xlsx)
     aba: '',
     chaveBase: 'Pedido',
     chaveRelatorio: 'pedido_codigo',
