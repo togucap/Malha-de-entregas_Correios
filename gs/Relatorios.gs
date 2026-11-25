@@ -201,7 +201,7 @@ function acharArquivoRelatorio_(pastaId, nome) {
     try { return DriveApp.getFileById(pastaId); } catch (e2) { throw new Error('pasta ou arquivo "' + pastaId + '" não encontrado no Drive (ou sem acesso)'); }
   }
   const alvo = String(nome).trim().toLowerCase();
-  const semExtensao = function (n) { return n.replace(/\.(xlsx|xls|csv)$/i, ''); };
+  const semExtensao = function (n) { return n.replace(/\.(xlsx|xls|csv|json)$/i, ''); };
   const arquivos = pasta.searchFiles('title contains "' + semExtensao(nome).replace(/(["\\])/g, '\\$1') + '" and trashed = false');
   let escolhido = null;
   while (arquivos.hasNext()) {

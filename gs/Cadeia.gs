@@ -1,5 +1,5 @@
 /**
- * Cadeia de atualização: importa os protocolos e, em seguida, dispara sozinha
+ * Cadeia de atualização: importa os protocolos (e a aba Retorno_Extensão) e, em seguida, dispara sozinha
  *   1) relatórios do Drive (cruzamentos) -> 2) tracking -> 3) Payload_Tracking (gerado no fim do tracking).
  * Cada etapa roda nas suas próprias execuções (com as continuações automáticas de sempre); quando
  * uma termina, chama avancarCadeia_() e a próxima começa ~1 min depois (gatilho continuarCadeia).
@@ -39,8 +39,10 @@ function executarCadeiaCompleta(e) {
     gravarStatus_('cadeia', { estado: 'erro', fim: Date.now(), mensagem: 'Parou na importação: ' + imp.msg });
     return 'Importação: ' + comPonto_(imp.msg) + ' A cadeia parou (relatórios e tracking não foram iniciados).';
   }
-  avancarCadeia_('importacao');
-  return 'Importação: ' + imp.msg + ' Em seguida, sozinho: relatórios do Drive → tracking → Payload_Tracking (acompanhe no painel, vista Cruzamentos).';
+  // aba Retorno_Extensão (JSON da extensão Shopee): rápida; erro vira alerta e a cadeia segue
+  const ret = importarRetornoExtensao_();
+  avancarCadeia_('importacao', ret.ok ? null : ret.msg);
+  return 'Importação: ' + imp.msg + ' ' + ret.msg + ' Em seguida, sozinho: relatórios do Drive → tracking → Payload_Tracking (acompanhe no painel, vista Cruzamentos).';
 }
 
 /**

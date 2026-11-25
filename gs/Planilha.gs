@@ -23,6 +23,7 @@ function onOpen() {
     .addSeparator()
     .addItem('Importar protocolos e atualizar tudo (relatórios → tracking → JSON)', 'menuImportarProtocolos')
     .addItem('Cruzar com relatórios do Drive', 'menuCruzarRelatorios')
+    .addItem('Importar Retorno_Extensão (Shopee)', 'menuImportarRetornoExtensao')
     .addItem('Gerar Payload_Tracking (JSON)', 'menuGerarPayloadTracking')
     .addSeparator()
     .addItem('Abrir painel', 'abrirPainel')

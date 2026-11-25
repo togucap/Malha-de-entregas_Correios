@@ -18,8 +18,9 @@ Pastas no GitHub: `gs/` (servidor), `html/` (páginas), `css/` e `js/` (estilos 
 - `Status.gs` — resumo do `Status tracking` (`RESUMOS_STATUS`) e status finalizadores (`STATUS_FINAIS`); listas editáveis.
 - `Classificador.gs` — tipo do código pela quantidade de caracteres: 10 dígitos autorização, 13 (`AA999999999AA`) rastreio, 14 dígitos Jadlog.
 - `Planilha.gs` — menu **Correios** (`onOpen`) e atualização da aba base: lê `Autorização Postagem`, grava `Código convertido`, `Status tracking`, `Data Ocorrencia`, `cidade ultima interação` e `Data Prevista Entrega` (Reversa → Rastro).
-- `Relatorios.gs` — percorre relatórios em pastas do Drive (pasta definida em cada cruzamento; drive compartilhado), achando o arquivo pelo nome com ou sem extensão: planilha Google, `.xlsx`/`.xls` (cópia convertida temporária via serviço avançado Drive API v3, enviada à lixeira) e `.csv` (baixado em partes, linha a linha).
+- `Relatorios.gs` — percorre relatórios em pastas do Drive (pasta definida em cada cruzamento; drive compartilhado), achando o arquivo pelo nome com ou sem extensão (`.xlsx`, `.xls`, `.csv`, `.json`): planilha Google, `.xlsx`/`.xls` (cópia convertida temporária via serviço avançado Drive API v3, enviada à lixeira) e `.csv` (baixado em partes, linha a linha).
 - `Importacao.gs` — botão "Importar protocolos do Drive": alimenta a aba base com o relatório `Consolidado_Protocolos` (remove duplicados e linhas sem autorização, acrescenta protocolos novos; cópia oculta `<aba>_backup` antes de gravar).
+- `RetornoExtensao.gs` — aba **Retorno_Extensão** abastecida com o JSON `Retorno_Extensao_Shopee` do Drive (pedido, situacao, prazo, origem); menu "Importar Retorno_Extensão (Shopee)" e passo da cadeia (ver seção própria).
 - `Cruzamentos.gs` — lista `CRUZAMENTOS` (id, pasta, arquivo, chave da base, chave do relatório, chave composta com rastreio, exclusão de linhas de outro cruzamento, colunas trazidas ou de presença Sim/Não) e o botão de menu "Cruzar com relatórios do Drive", que executa todos na ordem da lista.
 - `Intelipost.gs` — consulta Jadlog via Web App proxy corporativo da Intelipost: lote (uma chamada por lote), consulta crua da tela de teste e amostra de protocolos da base.
 - `IntelipostParser.gs` — interpreta `{ sucesso, dados }` do proxy: eventos do `detalhes.historico` por pedido (com `descricao` e `estadoTraduzido`), último evento, cidade, previsão de entrega se o proxy enviar (`CAMPOS_PREVISAO_INTELIPOST`); `statusIntelipost_`.
@@ -87,7 +88,7 @@ Pastas no GitHub: `gs/` (servidor), `html/` (páginas), `css/` e `js/` (estilos 
 - Clique numa pessoa (na cena ou na lista) seleciona e mostra a ficha. `Agencia.atualizar(dados)` é chamado por `js/TelaCruzamentos` a cada leitura; animação (requestAnimationFrame) só com a vista aberta e a aba visível; com `prefers-reduced-motion` a cena fica parada mostrando o estado.
 
 ### Cadeia de atualização (`Cadeia.gs`)
-- Importação de protocolos → relatórios do Drive → tracking → Payload_Tracking (gerado no fim do tracking). Entradas: menu Correios › "Importar protocolos e atualizar tudo (relatórios → tracking → JSON)" (`menuImportarProtocolos`), acionador de tempo em `executarCadeiaCompleta`, botão do painel. `importarProtocolos()` (editor) importa sem a cadeia.
+- Importação de protocolos (+ aba Retorno_Extensão, na mesma etapa; erro nela vira alerta e a cadeia segue) → relatórios do Drive → tracking → Payload_Tracking (gerado no fim do tracking). Entradas: menu Correios › "Importar protocolos e atualizar tudo (relatórios → tracking → JSON)" (`menuImportarProtocolos`), acionador de tempo em `executarCadeiaCompleta`, botão do painel. `importarProtocolos()` (editor) importa sem a cadeia.
 - Cada etapa roda com as próprias continuações; ao terminar chama `avancarCadeia_(etapa, alerta)`, que agenda `continuarCadeia` (~1 min) para a próxima. Lock ocupado (`MSG_OCUPADO`) → reagenda. Importação com erro para a cadeia (base não mudou); erro em relatório não impede o tracking (cadeia termina como alerta); tracking/JSON avulsos durante a cadeia não a avançam fora de ordem (só avança se a etapa atual for a que terminou).
 - "Cancelar continuação automática" também cancela a cadeia e os pedidos do painel (`cancelarCadeia_`: processos ativos → `parado`).
 - Acionadores sugeridos (Apps Script › Acionadores): `atualizarAutorizacoes` (tracking + JSON; recebe o evento, não reprocessa) várias vezes ao dia e/ou `executarCadeiaCompleta` (tudo). Atenção à cota diária de execução e de `UrlFetchApp`.
@@ -100,6 +101,15 @@ Pastas no GitHub: `gs/` (servidor), `html/` (páginas), `css/` e `js/` (estilos 
   - Campos ← colunas: `status` ← Status tracking; `dataOcorrencia` ← Data Ocorrencia; `cidade` ← cidade ultima interação (só a cidade, a base não guarda a UF); `dataPrevista` ← Data Prevista Entrega; `autorizacao` ← Autorização Postagem; `assistencia` ← Assistencia_Tecnica como **"Sim"/"Não"** (o nome da assistência não vai); `parceiro` ← Parceiro_Nome.
   - Datas `dd/MM/yyyy`; números como texto com todos os dígitos; vazio = `""` (nunca null).
   - Só linhas com `Pedido_Parceiro`; Pedido_Parceiro repetido → fica a linha com a `Data Ocorrencia` mais recente (sem data nas duas, a mais abaixo na base). Coluna ausente vai vazia e é avisada no resumo.
+
+## Aba Retorno_Extensão (`RetornoExtensao.gs`)
+
+- Fonte: JSON `Retorno_Extensao_Shopee` (com ou sem `.json`) na pasta `1Zk2F78…` do Drive (`RETORNO_EXTENSAO`), gerado pela extensão de retornos da Shopee. Formato confirmado (versao 1): `{ versao, atualizadoEm, totalPedidos, pedidos: { "<pedido>": { pedido, primeiroEnvio, situacao, statusSolicitacao, prazo, venceAprox, origem, ultimoEnvio, enviadoPor } } }` (também aceita `pedidos` como lista; sem `pedido` no registro, usa a chave).
+- Grava na aba **Retorno_Extensão** (achada sem diferenciar acento/maiúsculas; criada se não existir) as colunas `pedido`, `situacao`, `prazo`, `origem`, uma linha por pedido, na ordem do arquivo. Os demais campos (inclusive `enviadoPor`) não são gravados.
+- A aba é **regravada inteira** a cada importação (o arquivo é a fonte); `pedido` como texto (`@`); cabeçalho congelado; nota em A1 com a data da importação e o `atualizadoEm` do arquivo.
+- Arquivo ausente ou JSON inválido: a aba não muda e a mensagem diz o motivo (toast no menu; alerta na cadeia).
+- Valores observados (nov/2026): `situacao` "Não encontrado", `origem` "shopee-retornos", `prazo` em texto ("Vence em N dias/horas", vazio na maioria).
+- Entradas: menu Correios › "Importar Retorno_Extensão (Shopee)", cadeia (logo após a importação dos protocolos) e `importarRetornoExtensao()` (acionador/editor).
 
 ## Configuração
 
