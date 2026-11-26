@@ -1,11 +1,12 @@
 /**
  * Aba "Retorno_Extensão": abastecida com o arquivo JSON "Retorno_Extensao_Shopee" do Drive
- * (gerado pela extensão de retornos da Shopee). Para cada pedido grava Pedido_Shopee, situacao, prazo e origem.
+ * (gerado pela extensão de retornos da Shopee). Para cada pedido grava Pedido_Shopee, situacao, prazo, origem e
+ * statusSolicitacao.
  *
  * Formato do arquivo (confirmado, versao 1):
  *   { versao, atualizadoEm, totalPedidos, pedidos: { "<pedido>": { pedido, primeiroEnvio, situacao,
  *     statusSolicitacao, prazo, venceAprox, origem, ultimoEnvio, enviadoPor } } }
- * Só os 4 campos de RETORNO_EXTENSAO.colunas são lidos; os demais (inclusive quem enviou) não são gravados.
+ * Só os campos de RETORNO_EXTENSAO.colunas são lidos; os demais (inclusive quem enviou) não são gravados.
  *
  * As linhas são regravadas a cada importação (o arquivo é a fonte; pedido que sai do arquivo sai da aba).
  * Colunas que não vêm do arquivo (ex.: "Pedido", preenchida pelo cruzamento de CruzamentoShopee.gs) são
@@ -23,7 +24,8 @@ const RETORNO_EXTENSAO = {
     { campo: 'pedido', titulo: 'Pedido_Shopee', tituloAntigo: 'pedido' }, // "pedido" = título até nov/2026
     { campo: 'situacao', titulo: 'situacao' },
     { campo: 'prazo', titulo: 'prazo' },
-    { campo: 'origem', titulo: 'origem' }
+    { campo: 'origem', titulo: 'origem' },
+    { campo: 'statusSolicitacao', titulo: 'statusSolicitacao' } // nov/2026: entra no fim das abas que já existiam
   ]
 };
 

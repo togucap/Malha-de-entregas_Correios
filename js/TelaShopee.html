@@ -1,14 +1,20 @@
 <script>
 /*
- * Vista "Shopee": quadro kanban dos pedidos da aba Retorno_Extensão (dadosShopee, gs/Shopee).
- * - Colunas vêm do servidor (KANBAN_SHOPEE); a coluna de cada pedido também (colunaKanbanShopee_).
- * - Pesquisa no navegador (sem acento/maiúsculas, parte do texto) em Pedido Shopee e Pedido.
- * - Cada coluna mostra 50 cartões por vez ("Mostrar mais").
+ * Vista "Shopee": quadro kanban (dadosShopee, gs/Shopee).
+ * - Pendente de atendimento: cartões da aba Retorno_Extensão (título Pedido_Shopee; Pedido, prazo, statusSolicitacao).
+ * - Em transporte: cartões da aba base (título Pedido_Parceiro; Pedido, Status tracking, Assistência técnica
+ *   Sim/Não, Entrada_Lista).
+ * - Clique no cartão: janela com os dados de tracking (Data Ocorrencia, cidade, Data Prevista Entrega) e o
+ *   botão "Consultar tracking em tempo real", que abre a janela de histórico (js/HistoricoTracking).
+ * - Pesquisa no navegador (sem acento/maiúsculas, parte do texto) no título e no Pedido; 50 cartões por coluna.
+ * Depende de js/StatusVisual (window.classeStatus) e js/HistoricoTracking.
  */
 (function () {
   var VISTA = 'shopee';
   var POR_VEZ = 50;
-  var estado = { dados: null, carregado: false, carregando: false, limite: {} };
+  var estado = { dados: null, carregado: false, carregando: false, limite: {}, aberto: null, origem: null };
+
+  var RELOGIO = '<svg class="icone" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
 
   function $(id) { return document.getElementById(id); }
   function numero(n) { return Number(n || 0).toLocaleString('pt-BR'); }
@@ -20,6 +26,8 @@
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
     });
   }
+  function chipSimNao(v) { return normalizar(v) === 'sim' ? 'chip-sucesso' : 'chip-neutro'; }
+  function corStatus(s) { return window.classeStatus ? window.classeStatus(s) : 'chip-neutro'; }
 
   function avisar(texto) {
     var a = $('avisoShopee');
@@ -42,7 +50,7 @@
     google.script.run.withSuccessHandler(receber).withFailureHandler(function (e) {
       estado.carregando = false;
       $('atualizarShopee').disabled = false;
-      avisar('Não foi possível ler a aba Retorno_Extensão: ' + (e && e.message ? e.message : e));
+      avisar('Não foi possível ler as abas: ' + (e && e.message ? e.message : e));
       $('infoShopee').textContent = '';
     }).dadosShopee();
   }
@@ -51,23 +59,25 @@
     estado.carregando = false;
     estado.carregado = true;
     estado.dados = d;
+    d.cartoes.forEach(function (c, i) { c.i = i; });
     estado.limite = {};
     $('atualizarShopee').disabled = false;
     $('atualizadoShopee').textContent = 'Lido em ' + d.atualizadoEm;
-    if (!d.abaEncontrada) avisar('A aba Retorno_Extensão não foi encontrada. Use o menu Correios › "Importar Retorno_Extensão (Shopee)".');
-    else if (d.faltando.length) avisar('Coluna(s) não encontrada(s) na aba Retorno_Extensão: ' + d.faltando.join(', ') + '.');
-    else avisar('');
+    var avisos = [];
+    if (!d.abaRetorno) avisos.push('A aba Retorno_Extensão não foi encontrada (menu Correios › "Importar Retorno_Extensão (Shopee)").');
+    if (d.faltando.length) avisos.push('Coluna(s) não encontrada(s): ' + d.faltando.join(', ') + '.');
+    avisar(avisos.join(' '));
     desenhar();
   }
 
-  /* ---------- Desenho ---------- */
+  /* ---------- Quadro ---------- */
 
   function filtrados() {
     var termo = normalizar($('buscaShopee').value);
-    var lista = estado.dados ? estado.dados.pedidos : [];
+    var lista = estado.dados ? estado.dados.cartoes : [];
     if (!termo) return lista;
-    return lista.filter(function (p) {
-      return normalizar(p.shopee).indexOf(termo) >= 0 || normalizar(p.pedido).indexOf(termo) >= 0;
+    return lista.filter(function (c) {
+      return normalizar(c.titulo).indexOf(termo) >= 0 || normalizar(c.pedido).indexOf(termo) >= 0;
     });
   }
 
@@ -77,50 +87,103 @@
     var termo = $('buscaShopee').value.trim();
     var lista = filtrados();
     var porColuna = {};
-    var semColuna = 0;
     d.colunas.forEach(function (c) { porColuna[c.id] = []; });
-    lista.forEach(function (p) {
-      if (porColuna[p.coluna]) porColuna[p.coluna].push(p); else semColuna++;
-    });
+    lista.forEach(function (c) { if (porColuna[c.coluna]) porColuna[c.coluna].push(c); });
 
-    $('infoShopee').textContent = termo
-      ? numero(lista.length) + ' de ' + numero(d.pedidos.length) + ' pedido(s) na pesquisa'
-      : numero(d.pedidos.length) + ' pedido(s) na aba Retorno_Extensão';
+    $('infoShopee').textContent = (termo
+      ? numero(lista.length) + ' de ' + numero(d.cartoes.length) + ' cartão(ões) na pesquisa'
+      : numero(d.cartoes.length) + ' cartão(ões) no quadro') +
+      (d.foraDoQuadro ? ' · ' + numero(d.foraDoQuadro) + ' pedido(s) da Retorno_Extensão fora da regra (origem/situação)' : '');
 
-    // pedidos que nenhuma regra pôs em coluna (as regras das colunas ainda serão definidas)
-    var regra = $('regraShopee');
-    regra.hidden = !semColuna;
-    regra.textContent = semColuna
-      ? numero(semColuna) + ' pedido(s) ' + (termo ? 'da pesquisa ' : '') + 'ainda sem coluna: as regras de cada coluna do quadro ainda não foram definidas.'
-      : '';
-
-    $('kanbanShopee').innerHTML = d.colunas.map(function (c) {
-      var itens = porColuna[c.id];
-      var limite = estado.limite[c.id] || POR_VEZ;
-      var cartoes = itens.slice(0, limite).map(cartao).join('');
-      var vazio = '<li class="kanban-vazio">' + (termo ? 'Nenhum pedido da pesquisa nesta coluna.' : 'Nenhum pedido nesta coluna.') + '</li>';
+    $('kanbanShopee').innerHTML = d.colunas.map(function (col) {
+      var itens = porColuna[col.id];
+      var limite = estado.limite[col.id] || POR_VEZ;
+      var cartoes = itens.slice(0, limite).map(function (c) { return cartao(c, c.i); }).join('');
+      var textoVazio = !col.definida ? 'Regra desta coluna ainda não definida.'
+        : termo ? 'Nenhum pedido da pesquisa nesta coluna.' : 'Nenhum pedido nesta coluna.';
       var resto = itens.length - limite;
-      return '<section class="kanban-coluna' + (itens.length ? ' com-itens' : '') + '" data-coluna="' + escapar(c.id) + '" aria-label="' + escapar(c.titulo) + '">' +
-        '<header class="kanban-cabecalho"><h2 class="kanban-titulo">' + escapar(c.titulo) + '</h2>' +
+      return '<section class="kanban-coluna' + (itens.length ? ' com-itens' : '') + '" data-coluna="' + escapar(col.id) + '" aria-label="' + escapar(col.titulo) + '">' +
+        '<header class="kanban-cabecalho"><h2 class="kanban-titulo">' + escapar(col.titulo) + '</h2>' +
         '<span class="contador kanban-contador">' + numero(itens.length) + '</span></header>' +
-        '<ul class="kanban-lista">' + (cartoes || vazio) + '</ul>' +
-        (resto > 0 ? '<button type="button" class="btn btn-secundario kanban-mais" data-mais="' + escapar(c.id) + '">Mostrar mais (' + numero(resto) + ')</button>' : '') +
+        '<ul class="kanban-lista">' + (cartoes || '<li class="kanban-vazio">' + textoVazio + '</li>') + '</ul>' +
+        (resto > 0 ? '<button type="button" class="btn btn-secundario kanban-mais" data-mais="' + escapar(col.id) + '">Mostrar mais (' + numero(resto) + ')</button>' : '') +
         '</section>';
     }).join('');
   }
 
-  function cartao(p) {
-    var linhas = [];
-    linhas.push('<div class="kanban-linha"><span>Pedido</span>' +
-      (p.pedido ? '<span class="mono">' + escapar(p.pedido) + '</span>' : '<span>—</span>') + '</div>');
-    var extras = [];
-    if (p.situacao) extras.push('<span class="chip chip-neutro" title="' + escapar(p.situacao) + '">' + escapar(p.situacao) + '</span>');
-    if (p.prazo) {
-      extras.push('<span class="kanban-prazo"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>' +
-        escapar(p.prazo) + '</span>');
+  function linhaPedido(p) {
+    return '<div class="kanban-linha"><span>Pedido</span>' + (p ? '<span class="mono">' + escapar(p) + '</span>' : '<span>—</span>') + '</div>';
+  }
+
+  function cartao(c, k) {
+    var partes = [linhaPedido(c.pedido)];
+    if (c.tipo === 'retorno') {
+      var extras = [];
+      if (c.statusSolicitacao) extras.push('<span class="chip chip-neutro" title="' + escapar(c.statusSolicitacao) + '">' + escapar(c.statusSolicitacao) + '</span>');
+      if (c.prazo) extras.push('<span class="kanban-prazo">' + RELOGIO + escapar(c.prazo) + '</span>');
+      if (extras.length) partes.push('<div class="kanban-linha">' + extras.join('') + '</div>');
+    } else {
+      partes.push('<div class="kanban-linha"><span class="chip ' + corStatus(c.status) + '" title="' + escapar(c.status) + '">' + escapar(c.status || 'Sem status') + '</span></div>');
+      partes.push('<div class="kanban-linha kanban-indicadores">' +
+        '<span>Assist. técnica <span class="chip ' + chipSimNao(c.assistencia) + '">' + escapar(c.assistencia) + '</span></span>' +
+        '<span>Entrada lista <span class="chip ' + chipSimNao(c.entradaLista) + '">' + escapar(c.entradaLista || '—') + '</span></span></div>');
     }
-    if (extras.length) linhas.push('<div class="kanban-linha">' + extras.join('') + '</div>');
-    return '<li class="kanban-cartao"><div class="kanban-codigo" title="Pedido Shopee">' + escapar(p.shopee) + '</div>' + linhas.join('') + '</li>';
+    var rotulo = (c.tipo === 'retorno' ? 'Pedido Shopee ' : 'Pedido do parceiro ') + c.titulo + ': ver detalhes';
+    return '<li><button type="button" class="kanban-cartao" data-cartao="' + k + '" aria-label="' + escapar(rotulo) + '">' +
+      '<span class="kanban-codigo">' + escapar(c.titulo) + '</span>' + partes.join('') + '</button></li>';
+  }
+
+  /* ---------- Janela de detalhes ---------- */
+
+  function dado(rotulo, valor, mono) {
+    return '<div><dt>' + escapar(rotulo) + '</dt><dd' + (mono && valor ? ' class="mono"' : '') + '>' + escapar(valor || '—') + '</dd></div>';
+  }
+
+  function abrirDetalhes(c, origem) {
+    estado.aberto = c;
+    estado.origem = origem;
+    var t = c.tracking;
+    var status = c.tipo === 'base' ? c.status : t && t.status;
+    $('shopeeRotulo').textContent = c.tipo === 'retorno' ? 'Pedido Shopee · Pendente de atendimento' : 'Pedido do parceiro · Em transporte';
+    $('shopeeTitulo').textContent = c.titulo;
+    $('shopeeChips').innerHTML = status ? '<span class="chip ' + corStatus(status) + '">' + escapar(status) + '</span>' : '';
+
+    $('shopeeDados').innerHTML = c.tipo === 'retorno'
+      ? dado('Pedido', c.pedido, true) + dado('Prazo', c.prazo) + dado('Status da solicitação', c.statusSolicitacao) + dado('Situação', c.situacao)
+      : dado('Pedido', c.pedido, true) + dado('Protocolo', c.protocolo, true) + dado('Autorização Postagem', c.autorizacao, true) +
+        dado('Assistência técnica', c.assistencia) + dado('Entrada na lista', c.entradaLista);
+
+    $('shopeeTracking').innerHTML = t
+      ? (c.tipo === 'retorno' ? dado('Status tracking', t.status) : '') +
+        dado('Data ultima Ocorrencia', t.dataOcorrencia) + dado('Cidade ultima Ocorrencia', t.cidade) + dado('Data Prevista Entrega', t.previsao)
+      : '';
+    var nota = !t ? 'Este pedido não tem linha na Base_Dados (procurado pelo Pedido_Parceiro e pelo Pedido): sem dados de tracking.'
+      : !t.codigo ? 'A linha da base não tem código de rastreio nem autorização para consultar.' : '';
+    $('shopeeNota').textContent = nota;
+    $('shopeeNota').hidden = !nota;
+    $('shopeeTracking').hidden = !t;
+    $('shopeeConsultar').disabled = !(t && t.codigo);
+
+    $('shopeeFundo').hidden = false;
+    document.body.style.overflow = 'hidden';
+    document.querySelector('[data-fechar-shopee]').focus();
+  }
+
+  function fecharDetalhes(devolverFoco) {
+    if ($('shopeeFundo').hidden) return;
+    $('shopeeFundo').hidden = true;
+    document.body.style.overflow = '';
+    if (devolverFoco !== false && estado.origem && estado.origem.focus) estado.origem.focus();
+  }
+
+  // consulta em tempo real: fecha esta janela e abre a de histórico (o foco volta ao cartão ao fechar)
+  function consultarAgora() {
+    var c = estado.aberto, t = c && c.tracking;
+    if (!t || !t.codigo || !window.HistoricoTracking) return;
+    fecharDetalhes(false);
+    var contexto = [['Pedido', t.pedido || c.pedido], ['Protocolo', t.protocolo], [c.tipo === 'retorno' ? 'Pedido Shopee' : 'Pedido do parceiro', c.titulo]]
+      .filter(function (p) { return p[1]; }).map(function (p) { return p[0] + ' ' + p[1]; }).join(' · ');
+    HistoricoTracking.abrir({ codigo: t.codigo, protocolo: t.protocolo, autorizacao: t.autorizacao, contexto: contexto, origem: estado.origem });
   }
 
   /* ---------- Eventos ---------- */
@@ -130,12 +193,20 @@
     $('limparShopee').addEventListener('click', function () { $('buscaShopee').value = ''; estado.limite = {}; desenhar(); });
     $('atualizarShopee').addEventListener('click', carregar);
     $('kanbanShopee').addEventListener('click', function (e) {
-      var b = e.target.closest('[data-mais]');
-      if (!b) return;
-      var id = b.getAttribute('data-mais');
-      estado.limite[id] = (estado.limite[id] || POR_VEZ) + POR_VEZ;
-      desenhar();
+      var mais = e.target.closest('[data-mais]');
+      if (mais) {
+        var id = mais.getAttribute('data-mais');
+        estado.limite[id] = (estado.limite[id] || POR_VEZ) + POR_VEZ;
+        desenhar();
+        return;
+      }
+      var b = e.target.closest('[data-cartao]');
+      if (b) abrirDetalhes(estado.dados.cartoes[Number(b.getAttribute('data-cartao'))], b);
     });
+    $('shopeeConsultar').addEventListener('click', consultarAgora);
+    document.querySelector('[data-fechar-shopee]').addEventListener('click', function () { fecharDetalhes(); });
+    $('shopeeFundo').addEventListener('click', function (e) { if (e.target === $('shopeeFundo')) fecharDetalhes(); });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') fecharDetalhes(); });
   });
 
   // lê na primeira abertura da vista (depois, pelo botão Atualizar)

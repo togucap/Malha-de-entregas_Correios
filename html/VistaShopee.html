@@ -1,15 +1,15 @@
-<!-- Vista "Shopee": quadro kanban dos pedidos da aba Retorno_Extensão. Lógica em js/TelaShopee. -->
+<!-- Vista "Shopee": quadro kanban (aba Retorno_Extensão + aba base). Lógica em js/TelaShopee. -->
 <section class="vista" data-vista="shopee" hidden>
 
   <div class="card-container barra-shopee">
     <div class="campo campo-busca">
       <label class="campo-rotulo" for="buscaShopee">Pesquisar</label>
       <input class="input" id="buscaShopee" type="search" autocomplete="off" spellcheck="false"
-             placeholder="Pedido Shopee ou Pedido">
+             placeholder="Pedido Shopee, Pedido_Parceiro ou Pedido">
     </div>
     <div class="acoes-filtro">
       <button class="btn btn-fantasma" id="limparShopee" type="button">Limpar</button>
-      <button class="btn btn-secundario" id="atualizarShopee" type="button" title="Ler a aba Retorno_Extensão de novo">
+      <button class="btn btn-secundario" id="atualizarShopee" type="button" title="Ler as abas de novo">
         <svg class="icone" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></svg>
         <span>Atualizar</span>
       </button>
@@ -17,7 +17,6 @@
   </div>
 
   <div class="aviso aviso-perigo" id="avisoShopee" role="alert" hidden></div>
-  <div class="aviso aviso-info" id="regraShopee" hidden></div>
 
   <div class="resumo-tabela">
     <span id="infoShopee" class="texto-apoio">Carregando…</span>
@@ -26,4 +25,28 @@
 
   <!-- colunas montadas por js/TelaShopee a partir de dadosShopee().colunas -->
   <div class="kanban" id="kanbanShopee" aria-live="polite"></div>
+
+  <!-- Janela de detalhes do cartão (tracking da linha da base + consulta em tempo real) -->
+  <div class="modal-fundo" id="shopeeFundo" hidden>
+    <div class="modal modal-shopee" role="dialog" aria-modal="true" aria-labelledby="shopeeTitulo">
+      <button class="btn btn-fantasma btn-icone modal-fechar" type="button" data-fechar-shopee aria-label="Fechar" title="Fechar (Esc)">
+        <svg class="icone" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+      <div class="shopee-det-topo">
+        <span class="campo-rotulo" id="shopeeRotulo"></span>
+        <h2 class="shopee-det-codigo" id="shopeeTitulo"></h2>
+        <div class="shopee-det-chips" id="shopeeChips"></div>
+      </div>
+      <dl class="shopee-det-dados" id="shopeeDados"></dl>
+      <h3 class="shopee-det-secao">Tracking</h3>
+      <dl class="shopee-det-dados" id="shopeeTracking"></dl>
+      <p class="texto-apoio shopee-det-nota" id="shopeeNota" hidden></p>
+      <div class="modal-acoes">
+        <button class="btn btn-brand" id="shopeeConsultar" type="button">
+          <svg class="icone" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          <span>Consultar tracking em tempo real</span>
+        </button>
+      </div>
+    </div>
+  </div>
 </section>
