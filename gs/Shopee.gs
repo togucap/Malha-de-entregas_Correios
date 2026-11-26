@@ -2,9 +2,11 @@
  * Dados da vista "Shopee" do painel: quadro kanban que junta duas abas.
  *   - "Pendente de atendimento": aba Retorno_Extensão (JSON da extensão Shopee, RetornoExtensao.gs) com
  *     origem "shopee-retornos" e situacao "Não encontrado" (REGRA_PENDENTE_SHOPEE).
- *   - "Em transporte": aba base (Base_Dados) com Parceiro_Nome "SHOPEE" e Status tracking não finalizador
- *     (mesma regra statusFinalizado_ da atualização de status).
- *   - "Entregue" e "Finalizados": regras ainda não definidas (colunas vazias).
+ *   - Aba base (Base_Dados) com Parceiro_Nome "SHOPEE", pelo Status tracking (statusFinalizado_, a mesma regra
+ *     da atualização de status) e pela Entrada_Lista (colunaBaseShopee_):
+ *       "Em transporte" = status não finalizador;
+ *       "Entregue"      = status finalizador e Entrada_Lista diferente de "Sim" (ainda não entrou no estoque);
+ *       "Finalizados"   = status finalizador e Entrada_Lista "Sim".
  * Cada cartão leva também os dados de tracking da linha da base (janela de detalhes da tela). O cartão
  * pendente acha a linha da base pelo Pedido_Shopee = Pedido_Parceiro ou, sem ela, pelo Pedido.
  * Pesquisa no navegador (js/TelaShopee). Comparações de texto sem acento/maiúsculas.
@@ -13,12 +15,18 @@
 const KANBAN_SHOPEE = [
   { id: 'pendente', titulo: 'Pendente de atendimento', definida: true },
   { id: 'transporte', titulo: 'Em transporte', definida: true },
-  { id: 'entregue', titulo: 'Entregue', definida: false },
-  { id: 'finalizados', titulo: 'Finalizados', definida: false }
+  { id: 'entregue', titulo: 'Entregue', definida: true },
+  { id: 'finalizados', titulo: 'Finalizados', definida: true }
 ];
 
 const REGRA_PENDENTE_SHOPEE = { origem: 'shopee-retornos', situacao: 'Não encontrado' };
 const PARCEIRO_SHOPEE = 'SHOPEE';
+
+// Coluna do quadro de uma linha SHOPEE da base (l: textos da linha)
+function colunaBaseShopee_(l) {
+  if (!statusFinalizado_(l.status)) return 'transporte';
+  return normalizarTexto_(l.entradaLista) === 'sim' ? 'finalizados' : 'entregue';
+}
 
 // colunas da aba Retorno_Extensão (campo -> nome na aba)
 const CAMPOS_RETORNO_SHOPEE = {
@@ -36,7 +44,9 @@ const CAMPOS_BASE_SHOPEE = {
 /**
  * Chamada pelo painel (google.script.run). Devolve só textos:
  * { colunas: [{ id, titulo, definida }],
- *   cartoes: [{ coluna, tipo: 'retorno'|'base', titulo, pedido, ... , tracking }],
+ *   cartoes: retorno = { coluna, tipo: 'retorno', titulo, pedido, prazo, statusSolicitacao, situacao, tracking }
+ *            base    = { coluna, tipo: 'base', titulo, pedido, status, assistencia (Sim/Não), entradaLista,
+ *                        protocolo, autorizacao, codigo, dataOcorrencia, cidade, previsao } (o próprio cartão é o tracking),
  *   foraDoQuadro (linhas da Retorno_Extensão que não entram na regra), faltando: ['Aba: coluna'],
  *   abaRetorno (encontrada), atualizadoEm }.
  * tracking = { status, dataOcorrencia, cidade, previsao, codigo, autorizacao, protocolo, pedido } ou null.
@@ -75,17 +85,18 @@ function dadosShopee() {
     const b = porParceiro[chaveCruzamento_(l.shopee)] || porPedido[chaveCruzamento_(l.pedido)] || null;
     resposta.cartoes.push({
       coluna: 'pendente', tipo: 'retorno', titulo: l.shopee, pedido: l.pedido, prazo: l.prazo,
-      statusSolicitacao: l.statusSolicitacao, situacao: l.situacao, origem: l.origem, tracking: trackingShopee_(b)
+      statusSolicitacao: l.statusSolicitacao, situacao: l.situacao, tracking: trackingShopee_(b)
     });
   });
 
   const parceiro = normalizarTexto_(PARCEIRO_SHOPEE);
   base.linhas.forEach(function (l) {
-    if (normalizarTexto_(l.parceiro) !== parceiro || statusFinalizado_(l.status)) return;
+    if (normalizarTexto_(l.parceiro) !== parceiro) return;
     resposta.cartoes.push({
-      coluna: 'transporte', tipo: 'base', titulo: l.pedidoParceiro || l.pedido, pedidoParceiro: l.pedidoParceiro,
+      coluna: colunaBaseShopee_(l), tipo: 'base', titulo: l.pedidoParceiro || l.pedido,
       pedido: l.pedido, status: l.status, assistencia: l.assistencia ? 'Sim' : 'Não', entradaLista: l.entradaLista,
-      protocolo: l.protocolo, autorizacao: l.autorizacao, tracking: trackingShopee_(l)
+      protocolo: l.protocolo, autorizacao: l.autorizacao, codigo: l.convertido || l.autorizacao,
+      dataOcorrencia: l.dataOcorrencia, cidade: l.cidade, previsao: l.previsao
     });
   });
   return resposta;
@@ -118,7 +129,7 @@ function lerAbaShopee_(aba, campos, formatos) {
   return { linhas: linhas, faltando: faltando };
 }
 
-// Dados de tracking de uma linha da base para a janela de detalhes (null = sem linha na base)
+// Tracking da linha da base para a janela de detalhes de um cartão pendente (null = sem linha na base)
 function trackingShopee_(l) {
   if (!l) return null;
   return {

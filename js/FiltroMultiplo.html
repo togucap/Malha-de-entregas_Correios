@@ -64,7 +64,11 @@
 
   function abrir(raiz) {
     fecharTodos(raiz);
-    raiz.querySelector('[data-menu]').hidden = false;
+    var menu = raiz.querySelector('[data-menu]');
+    menu.classList.remove('filtro-menu-direita');
+    menu.hidden = false;
+    // perto da borda direita da tela: alinha o menu pela direita do botão (não cria rolagem lateral)
+    if (menu.getBoundingClientRect().right > document.documentElement.clientWidth - 8) menu.classList.add('filtro-menu-direita');
     raiz.querySelector('[data-acao="abrir"]').setAttribute('aria-expanded', 'true');
     raiz.querySelector('[data-acao="buscar"]').focus();
   }

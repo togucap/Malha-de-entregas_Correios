@@ -1,6 +1,7 @@
 <script>
 /*
- * Tela "Acompanhamento - OUT": carrega dadosAcompanhamentoOut() na primeira vez que a tela é aberta;
+ * Tela "Acompanhamento - OUT": carrega dadosAcompanhamentoOutJson() (cache do servidor, gs/CacheDados) em segundo
+ * plano logo depois de o painel abrir ou na primeira vez que a tela é aberta ("Atualizar" ignora o cache);
  * visão, pesquisa e filtros rodam no navegador. Mostra 500 linhas por vez ("Mostrar mais").
  *
  * - Visão "Em aberto" (padrão) = status ainda consultado pelas APIs; "Finalizado" = status final
@@ -46,7 +47,9 @@
 
   /* ---------- Carregamento ---------- */
 
-  function carregar() {
+  // forcar = true: relê a base (botão Atualizar); senão o servidor pode responder do cache (gs/CacheDados)
+  function carregar(forcar) {
+    if (estado.carregando) return;
     estado.carregado = true;
     $('avisoOut').hidden = true;
     $('infoOut').textContent = 'Carregando…';
@@ -55,10 +58,16 @@
       falhar({ message: 'Abra o painel pelo Apps Script (menu Correios › Abrir painel ou App da Web).' });
       return;
     }
-    google.script.run.withSuccessHandler(receber).withFailureHandler(falhar).dadosAcompanhamentoOut();
+    estado.carregando = true;
+    google.script.run.withSuccessHandler(function (texto) {
+      var d;
+      try { d = typeof texto === 'string' ? JSON.parse(texto) : texto; } catch (e) { falhar(e); return; }
+      receber(d);
+    }).withFailureHandler(falhar).dadosAcompanhamentoOutJson(!!forcar);
   }
 
   function receber(d) {
+    estado.carregando = false;
     $('atualizarOut').disabled = false;
     estado.colunas = d.colunas;          // nomes na base (usados para achar as colunas)
     estado.rotulos = d.rotulos || d.colunas; // títulos do cabeçalho
@@ -77,6 +86,7 @@
   }
 
   function falhar(e) {
+    estado.carregando = false;
     $('atualizarOut').disabled = false;
     $('infoOut').textContent = '';
     avisar('Não foi possível ler a base: ' + (e && e.message ? e.message : e));
@@ -247,7 +257,7 @@
       filtros().forEach(FiltroMultiplo.limpar);
       aplicar();
     });
-    $('atualizarOut').addEventListener('click', carregar);
+    $('atualizarOut').addEventListener('click', function () { carregar(true); });
     $('maisOut').addEventListener('click', function () { estado.limite += POR_PAGINA; desenharLinhas(); });
     // botão "Histórico" de cada linha (delegação: as linhas são redesenhadas a cada filtro)
     $('tabelaOut').tBodies[0].addEventListener('click', function (e) {
@@ -259,6 +269,10 @@
   // carrega na primeira vez que a tela é aberta (evento disparado por js/Navegacao)
   document.addEventListener('vistamostrada', function (e) {
     if (e.detail === VISTA && !estado.carregado) carregar();
+  });
+  // pré-carregamento: lê em segundo plano logo depois de o painel abrir, mesmo com outra vista na tela
+  window.addEventListener('load', function () {
+    setTimeout(function () { if (!estado.carregado && window.google && google.script && google.script.run) carregar(); }, 1000);
   });
 })();
 </script>

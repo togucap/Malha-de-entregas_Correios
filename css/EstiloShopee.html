@@ -1,13 +1,13 @@
 <style>
 /* Vista "Shopee": quadro kanban. Só tokens. Estado de cada coluna por uma barra de 4 px no topo. */
 
-.barra-shopee {
-  display: grid;
-  grid-template-columns: minmax(240px, 480px) auto;
-  justify-content: space-between;
-  gap: 12px;
-  align-items: end;
-}
+/* linha 1: pesquisa + ações; linha 2: os 5 filtros em grade */
+.barra-shopee { display: flex; flex-direction: column; gap: 12px; }
+.barra-shopee-topo { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
+.barra-shopee-topo .campo-busca { flex: 1 1 280px; max-width: 560px; }
+.barra-shopee-topo .acoes-filtro { margin-left: auto; }
+.barra-shopee-filtros { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+
 #avisoShopee { margin-bottom: 12px; }
 
 /* a barra do Acompanhamento usa áreas nomeadas para .campo-busca/.acoes-filtro; aqui não */
@@ -117,7 +117,7 @@
 }
 
 @media (max-width: 700px) {
-  .barra-shopee { grid-template-columns: 1fr; }
+  .barra-shopee-topo .campo-busca, .barra-shopee-topo .acoes-filtro { flex: 1 1 100%; max-width: none; }
   .barra-shopee .acoes-filtro .btn { flex: 1 1 auto; }
   .kanban { grid-template-columns: 1fr; }
   .kanban-lista { max-height: 420px; }

@@ -1,9 +1,14 @@
 <script>
 /*
- * Vista "Shopee": quadro kanban (dadosShopee, gs/Shopee).
+ * Vista "Shopee": quadro kanban (dadosShopeeJson, gs/CacheDados -> dadosShopee, gs/Shopee).
  * - Pendente de atendimento: cartões da aba Retorno_Extensão (título Pedido_Shopee; Pedido, prazo, statusSolicitacao).
- * - Em transporte: cartões da aba base (título Pedido_Parceiro; Pedido, Status tracking, Assistência técnica
- *   Sim/Não, Entrada_Lista).
+ * - Em transporte, Entregue e Finalizados: cartões da aba base (título Pedido_Parceiro; Pedido, Status tracking,
+ *   Assistência técnica Sim/Não, Entrada_Lista).
+ * - Filtros FiltroMultiplo (data-campo = campo do cartão; cartão sem o campo conta como "(vazio)"):
+ *   Status tracking, statusSolicitacao, prazo, Entrada_Lista, Assistência técnica. Opções = valores dos cartões
+ *   que passam na pesquisa, com contagem. Mudança chama aplicarFiltrosShopee.
+ * - Dados: lidos em segundo plano logo depois de o painel abrir (pré-carregamento) e servidos do cache do
+ *   servidor; "Atualizar" relê as abas ignorando o cache.
  * - Clique no cartão: janela com os dados de tracking (Data Ocorrencia, cidade, Data Prevista Entrega) e o
  *   botão "Consultar tracking em tempo real", que abre a janela de histórico (js/HistoricoTracking).
  * - Pesquisa no navegador (sem acento/maiúsculas, parte do texto) no título e no Pedido; 50 cartões por coluna.
@@ -12,6 +17,8 @@
 (function () {
   var VISTA = 'shopee';
   var POR_VEZ = 50;
+  var VAZIO = '\u0000vazio';
+  var PRECARGA_MS = 1500;
   var estado = { dados: null, carregado: false, carregando: false, limite: {}, aberto: null, origem: null };
 
   var RELOGIO = '<svg class="icone" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
@@ -37,7 +44,11 @@
 
   /* ---------- Leitura ---------- */
 
-  function carregar() {
+  function filtros() { return Array.prototype.slice.call(document.querySelectorAll('[data-vista="' + VISTA + '"] [data-filtro-multiplo]')); }
+  function valorCampo(c, campo) { var v = c[campo]; return v == null ? '' : String(v); }
+
+  // forcar = true: relê as abas (botão Atualizar); senão o servidor pode responder do cache
+  function carregar(forcar) {
     if (estado.carregando) return;
     if (!window.google || !google.script || !google.script.run) {
       avisar('Abra o painel pelo Apps Script (menu Correios › Abrir painel ou App da Web).');
@@ -47,19 +58,30 @@
     estado.carregando = true;
     $('atualizarShopee').disabled = true;
     $('infoShopee').textContent = 'Carregando…';
-    google.script.run.withSuccessHandler(receber).withFailureHandler(function (e) {
-      estado.carregando = false;
-      $('atualizarShopee').disabled = false;
-      avisar('Não foi possível ler as abas: ' + (e && e.message ? e.message : e));
-      $('infoShopee').textContent = '';
-    }).dadosShopee();
+    google.script.run.withSuccessHandler(function (texto) {
+      var d;
+      try { d = typeof texto === 'string' ? JSON.parse(texto) : texto; } catch (e) { falhar(e); return; }
+      receber(d);
+    }).withFailureHandler(falhar).dadosShopeeJson(!!forcar);
+  }
+
+  function falhar(e) {
+    estado.carregando = false;
+    $('atualizarShopee').disabled = false;
+    avisar('Não foi possível ler as abas: ' + (e && e.message ? e.message : e));
+    $('infoShopee').textContent = '';
   }
 
   function receber(d) {
     estado.carregando = false;
     estado.carregado = true;
     estado.dados = d;
-    d.cartoes.forEach(function (c, i) { c.i = i; });
+    d.cartoes.forEach(function (c, i) {
+      c.i = i;
+      if (c.tipo === 'base') c.tracking = { status: c.status, dataOcorrencia: c.dataOcorrencia, cidade: c.cidade, previsao: c.previsao,
+        codigo: c.codigo, autorizacao: c.autorizacao, protocolo: c.protocolo, pedido: c.pedido };
+      c.busca = normalizar(c.titulo + ' ' + c.pedido);
+    });
     estado.limite = {};
     $('atualizarShopee').disabled = false;
     $('atualizadoShopee').textContent = 'Lido em ' + d.atualizadoEm;
@@ -67,31 +89,62 @@
     if (!d.abaRetorno) avisos.push('A aba Retorno_Extensão não foi encontrada (menu Correios › "Importar Retorno_Extensão (Shopee)").');
     if (d.faltando.length) avisos.push('Coluna(s) não encontrada(s): ' + d.faltando.join(', ') + '.');
     avisar(avisos.join(' '));
-    desenhar();
+    estado.termo = null; // força montar as opções dos filtros
+    aplicar();
   }
 
   /* ---------- Quadro ---------- */
 
-  function filtrados() {
-    var termo = normalizar($('buscaShopee').value);
-    var lista = estado.dados ? estado.dados.cartoes : [];
-    if (!termo) return lista;
-    return lista.filter(function (c) {
-      return normalizar(c.titulo).indexOf(termo) >= 0 || normalizar(c.pedido).indexOf(termo) >= 0;
+  // opções de cada filtro: valores dos cartões que passam na pesquisa, com contagem ("(vazio)" no fim)
+  function montarFiltros(naPesquisa) {
+    filtros().forEach(function (raiz) {
+      var campo = raiz.getAttribute('data-campo');
+      var contagem = {};
+      naPesquisa.forEach(function (c) {
+        var v = valorCampo(c, campo);
+        var k = v === '' ? VAZIO : v;
+        contagem[k] = (contagem[k] || 0) + 1;
+      });
+      FiltroMultiplo.preencher(raiz, Object.keys(contagem).sort(function (a, b) {
+        if (a === VAZIO) return 1;
+        if (b === VAZIO) return -1;
+        return a.localeCompare(b, 'pt-BR', { numeric: true });
+      }).map(function (v) { return { valor: v, rotulo: v === VAZIO ? '(vazio)' : v, qtd: contagem[v] }; }));
     });
   }
+
+  // pesquisa + filtros; as opções dos filtros só são remontadas quando a pesquisa muda
+  function aplicar() {
+    if (!estado.dados) return;
+    var termo = normalizar($('buscaShopee').value);
+    var naPesquisa = termo ? estado.dados.cartoes.filter(function (c) { return c.busca.indexOf(termo) >= 0; }) : estado.dados.cartoes;
+    if (termo !== estado.termo) { estado.termo = termo; montarFiltros(naPesquisa); }
+    var ativos = filtros().map(function (raiz) {
+      var conjunto = {};
+      FiltroMultiplo.selecionados(raiz).forEach(function (v) { conjunto[v === VAZIO ? '' : v] = true; });
+      return { campo: raiz.getAttribute('data-campo'), conjunto: conjunto, vazio: !Object.keys(conjunto).length };
+    }).filter(function (f) { return !f.vazio; });
+    estado.filtrados = !ativos.length ? naPesquisa : naPesquisa.filter(function (c) {
+      for (var k = 0; k < ativos.length; k++) if (!ativos[k].conjunto[valorCampo(c, ativos[k].campo)]) return false;
+      return true;
+    });
+    estado.comFiltro = !!termo || ativos.length > 0;
+    estado.limite = {};
+    desenhar();
+  }
+  window.aplicarFiltrosShopee = aplicar;
 
   function desenhar() {
     var d = estado.dados;
     if (!d) return;
-    var termo = $('buscaShopee').value.trim();
-    var lista = filtrados();
+    var termo = estado.comFiltro;
+    var lista = estado.filtrados || [];
     var porColuna = {};
     d.colunas.forEach(function (c) { porColuna[c.id] = []; });
     lista.forEach(function (c) { if (porColuna[c.coluna]) porColuna[c.coluna].push(c); });
 
     $('infoShopee').textContent = (termo
-      ? numero(lista.length) + ' de ' + numero(d.cartoes.length) + ' cartão(ões) na pesquisa'
+      ? numero(lista.length) + ' de ' + numero(d.cartoes.length) + ' cartão(ões) na pesquisa/filtros'
       : numero(d.cartoes.length) + ' cartão(ões) no quadro') +
       (d.foraDoQuadro ? ' · ' + numero(d.foraDoQuadro) + ' pedido(s) da Retorno_Extensão fora da regra (origem/situação)' : '');
 
@@ -100,7 +153,7 @@
       var limite = estado.limite[col.id] || POR_VEZ;
       var cartoes = itens.slice(0, limite).map(function (c) { return cartao(c, c.i); }).join('');
       var textoVazio = !col.definida ? 'Regra desta coluna ainda não definida.'
-        : termo ? 'Nenhum pedido da pesquisa nesta coluna.' : 'Nenhum pedido nesta coluna.';
+        : termo ? 'Nenhum pedido da pesquisa/filtros nesta coluna.' : 'Nenhum pedido nesta coluna.';
       var resto = itens.length - limite;
       return '<section class="kanban-coluna' + (itens.length ? ' com-itens' : '') + '" data-coluna="' + escapar(col.id) + '" aria-label="' + escapar(col.titulo) + '">' +
         '<header class="kanban-cabecalho"><h2 class="kanban-titulo">' + escapar(col.titulo) + '</h2>' +
@@ -144,7 +197,8 @@
     estado.origem = origem;
     var t = c.tracking;
     var status = c.tipo === 'base' ? c.status : t && t.status;
-    $('shopeeRotulo').textContent = c.tipo === 'retorno' ? 'Pedido Shopee · Pendente de atendimento' : 'Pedido do parceiro · Em transporte';
+    var coluna = (estado.dados.colunas.filter(function (x) { return x.id === c.coluna; })[0] || {}).titulo || '';
+    $('shopeeRotulo').textContent = (c.tipo === 'retorno' ? 'Pedido Shopee' : 'Pedido do parceiro') + (coluna ? ' · ' + coluna : '');
     $('shopeeTitulo').textContent = c.titulo;
     $('shopeeChips').innerHTML = status ? '<span class="chip ' + corStatus(status) + '">' + escapar(status) + '</span>' : '';
 
@@ -189,9 +243,10 @@
   /* ---------- Eventos ---------- */
 
   document.addEventListener('DOMContentLoaded', function () {
-    $('buscaShopee').addEventListener('input', function () { estado.limite = {}; desenhar(); });
-    $('limparShopee').addEventListener('click', function () { $('buscaShopee').value = ''; estado.limite = {}; desenhar(); });
-    $('atualizarShopee').addEventListener('click', carregar);
+    var espera;
+    $('buscaShopee').addEventListener('input', function () { clearTimeout(espera); espera = setTimeout(aplicar, 150); });
+    $('limparShopee').addEventListener('click', function () { $('buscaShopee').value = ''; filtros().forEach(FiltroMultiplo.limpar); aplicar(); });
+    $('atualizarShopee').addEventListener('click', function () { carregar(true); });
     $('kanbanShopee').addEventListener('click', function (e) {
       var mais = e.target.closest('[data-mais]');
       if (mais) {
@@ -209,7 +264,10 @@
     document.addEventListener('keydown', function (e) { if (e.key === 'Escape') fecharDetalhes(); });
   });
 
-  // lê na primeira abertura da vista (depois, pelo botão Atualizar)
+  // lê na primeira abertura da vista ou antes, em segundo plano, logo depois de o painel abrir (depois, pelo botão Atualizar)
   document.addEventListener('vistamostrada', function (e) { if (e.detail === VISTA && !estado.carregado) carregar(); });
+  window.addEventListener('load', function () {
+    setTimeout(function () { if (!estado.carregado && window.google && google.script && google.script.run) carregar(); }, PRECARGA_MS);
+  });
 })();
 </script>

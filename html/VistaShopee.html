@@ -2,17 +2,92 @@
 <section class="vista" data-vista="shopee" hidden>
 
   <div class="card-container barra-shopee">
-    <div class="campo campo-busca">
-      <label class="campo-rotulo" for="buscaShopee">Pesquisar</label>
-      <input class="input" id="buscaShopee" type="search" autocomplete="off" spellcheck="false"
-             placeholder="Pedido Shopee, Pedido_Parceiro ou Pedido">
+    <div class="barra-shopee-topo">
+      <div class="campo campo-busca">
+        <label class="campo-rotulo" for="buscaShopee">Pesquisar</label>
+        <input class="input" id="buscaShopee" type="search" autocomplete="off" spellcheck="false"
+               placeholder="Pedido Shopee, Pedido_Parceiro ou Pedido">
+      </div>
+      <div class="acoes-filtro">
+        <button class="btn btn-fantasma" id="limparShopee" type="button">Limpar</button>
+        <button class="btn btn-secundario" id="atualizarShopee" type="button" title="Ler as abas de novo (ignora o cache)">
+          <svg class="icone" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></svg>
+          <span>Atualizar</span>
+        </button>
+      </div>
     </div>
-    <div class="acoes-filtro">
-      <button class="btn btn-fantasma" id="limparShopee" type="button">Limpar</button>
-      <button class="btn btn-secundario" id="atualizarShopee" type="button" title="Ler as abas de novo">
-        <svg class="icone" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/></svg>
-        <span>Atualizar</span>
-      </button>
+    <div class="barra-shopee-filtros">
+      <!-- filtros de seleção múltipla (js/FiltroMultiplo); data-campo = campo do cartão -->
+      <div class="campo">
+        <span class="campo-rotulo">Status tracking</span>
+        <div class="filtro-multiplo" data-filtro-multiplo data-campo="status" data-rotulo="Status" data-ao-mudar="aplicarFiltrosShopee">
+          <button type="button" class="filtro-botao" data-acao="abrir" aria-haspopup="true" aria-expanded="false">
+            <span class="filtro-titulo" data-titulo>Status (Todos)</span>
+            <svg class="icone" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+          </button>
+          <div class="filtro-menu" data-menu hidden>
+            <input class="input" type="search" data-acao="buscar" placeholder="Buscar status…" autocomplete="off">
+            <div class="filtro-acoes"><button type="button" data-acao="todos">Selecionar todos</button><button type="button" data-acao="limpar">Limpar</button></div>
+            <ul class="filtro-lista" data-lista></ul>
+          </div>
+        </div>
+      </div>
+      <div class="campo">
+        <span class="campo-rotulo">Status da solicitação</span>
+        <div class="filtro-multiplo" data-filtro-multiplo data-campo="statusSolicitacao" data-rotulo="Solicitação" data-ao-mudar="aplicarFiltrosShopee">
+          <button type="button" class="filtro-botao" data-acao="abrir" aria-haspopup="true" aria-expanded="false">
+            <span class="filtro-titulo" data-titulo>Solicitação (Todos)</span>
+            <svg class="icone" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+          </button>
+          <div class="filtro-menu" data-menu hidden>
+            <input class="input" type="search" data-acao="buscar" placeholder="Buscar…" autocomplete="off">
+            <div class="filtro-acoes"><button type="button" data-acao="todos">Selecionar todos</button><button type="button" data-acao="limpar">Limpar</button></div>
+            <ul class="filtro-lista" data-lista></ul>
+          </div>
+        </div>
+      </div>
+      <div class="campo">
+        <span class="campo-rotulo">Prazo</span>
+        <div class="filtro-multiplo" data-filtro-multiplo data-campo="prazo" data-rotulo="Prazo" data-ao-mudar="aplicarFiltrosShopee">
+          <button type="button" class="filtro-botao" data-acao="abrir" aria-haspopup="true" aria-expanded="false">
+            <span class="filtro-titulo" data-titulo>Prazo (Todos)</span>
+            <svg class="icone" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+          </button>
+          <div class="filtro-menu" data-menu hidden>
+            <input class="input" type="search" data-acao="buscar" placeholder="Buscar prazo…" autocomplete="off">
+            <div class="filtro-acoes"><button type="button" data-acao="todos">Selecionar todos</button><button type="button" data-acao="limpar">Limpar</button></div>
+            <ul class="filtro-lista" data-lista></ul>
+          </div>
+        </div>
+      </div>
+      <div class="campo">
+        <span class="campo-rotulo">Entrada na lista</span>
+        <div class="filtro-multiplo" data-filtro-multiplo data-campo="entradaLista" data-rotulo="Entrada" data-ao-mudar="aplicarFiltrosShopee">
+          <button type="button" class="filtro-botao" data-acao="abrir" aria-haspopup="true" aria-expanded="false">
+            <span class="filtro-titulo" data-titulo>Entrada (Todos)</span>
+            <svg class="icone" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+          </button>
+          <div class="filtro-menu" data-menu hidden>
+            <input class="input" type="search" data-acao="buscar" placeholder="Buscar…" autocomplete="off">
+            <div class="filtro-acoes"><button type="button" data-acao="todos">Selecionar todos</button><button type="button" data-acao="limpar">Limpar</button></div>
+            <ul class="filtro-lista" data-lista></ul>
+          </div>
+        </div>
+      </div>
+      <div class="campo">
+        <span class="campo-rotulo">Assistência técnica</span>
+        <div class="filtro-multiplo" data-filtro-multiplo data-campo="assistencia" data-rotulo="Assistência" data-ao-mudar="aplicarFiltrosShopee">
+          <button type="button" class="filtro-botao" data-acao="abrir" aria-haspopup="true" aria-expanded="false">
+            <span class="filtro-titulo" data-titulo>Assistência (Todos)</span>
+            <svg class="icone" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+          </button>
+          <div class="filtro-menu" data-menu hidden>
+            <input class="input" type="search" data-acao="buscar" placeholder="Buscar…" autocomplete="off">
+            <div class="filtro-acoes"><button type="button" data-acao="todos">Selecionar todos</button><button type="button" data-acao="limpar">Limpar</button></div>
+            <ul class="filtro-lista" data-lista></ul>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 

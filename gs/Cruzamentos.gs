@@ -284,6 +284,7 @@ function executarEtapaCruzamento_(aba, c, prazo, retomada) {
     }
     rng.setValues(valores);
   });
+  invalidarDadosPainel_();
 
   if (rel.retomada) {
     salvarListaBits_(c.id, bits);
@@ -307,6 +308,7 @@ function executarEtapaCruzamento_(aba, c, prazo, retomada) {
     }
     rng.setValues(valores);
   });
+  invalidarDadosPainel_();
   salvarListaBits_(c.id, [bits[0]]); // linhas com correspondência, para quem depende deste cruzamento
 
   return {

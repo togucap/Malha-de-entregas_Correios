@@ -211,6 +211,7 @@ function atualizar_(reprocessar, automatico, origem) {
       aba.getRange(cab + 1 + de, colData, ate - de + 1, 1).setValues(dados.datas.slice(de, ate + 1));
       aba.getRange(cab + 1 + de, colCidade, ate - de + 1, 1).setValues(dados.cidades.slice(de, ate + 1));
       aba.getRange(cab + 1 + de, colPrevisao, ate - de + 1, 1).setValues(dados.previsoes.slice(de, ate + 1));
+      invalidarDadosPainel_();
 
       somarContagem_(rastro, r);
       somarContagem_(intelipost, r.intelipost);
