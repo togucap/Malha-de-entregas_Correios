@@ -209,5 +209,7 @@ const ROTULOS_GATILHOS = {
   painelIniciarCadeia: 'Cadeia pedida pelo painel (uso único)',
   painelIniciarTracking: 'Tracking pedido pelo painel (uso único)',
   painelIniciarCruzamentos: 'Relatórios pedidos pelo painel (uso único)',
-  gerarPayloadTracking: 'Geração do Payload_Tracking'
+  gerarPayloadTracking: 'Geração do Payload_Tracking',
+  importarRetornoExtensao: 'Importação do Retorno_Extensão (Shopee)',
+  continuarCruzamentoShopee: 'Continuação do cruzamento Pedido (Shopee) (uso único)'
 };

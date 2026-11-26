@@ -1,0 +1,144 @@
+<script>
+/*
+ * Vista "Shopee": quadro kanban dos pedidos da aba Retorno_Extensão (dadosShopee, gs/Shopee).
+ * - Colunas vêm do servidor (KANBAN_SHOPEE); a coluna de cada pedido também (colunaKanbanShopee_).
+ * - Pesquisa no navegador (sem acento/maiúsculas, parte do texto) em Pedido Shopee e Pedido.
+ * - Cada coluna mostra 50 cartões por vez ("Mostrar mais").
+ */
+(function () {
+  var VISTA = 'shopee';
+  var POR_VEZ = 50;
+  var estado = { dados: null, carregado: false, carregando: false, limite: {} };
+
+  function $(id) { return document.getElementById(id); }
+  function numero(n) { return Number(n || 0).toLocaleString('pt-BR'); }
+  function normalizar(v) {
+    return String(v == null ? '' : v).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+  }
+  function escapar(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function avisar(texto) {
+    var a = $('avisoShopee');
+    a.textContent = texto || '';
+    a.hidden = !texto;
+  }
+
+  /* ---------- Leitura ---------- */
+
+  function carregar() {
+    if (estado.carregando) return;
+    if (!window.google || !google.script || !google.script.run) {
+      avisar('Abra o painel pelo Apps Script (menu Correios › Abrir painel ou App da Web).');
+      $('infoShopee').textContent = '';
+      return;
+    }
+    estado.carregando = true;
+    $('atualizarShopee').disabled = true;
+    $('infoShopee').textContent = 'Carregando…';
+    google.script.run.withSuccessHandler(receber).withFailureHandler(function (e) {
+      estado.carregando = false;
+      $('atualizarShopee').disabled = false;
+      avisar('Não foi possível ler a aba Retorno_Extensão: ' + (e && e.message ? e.message : e));
+      $('infoShopee').textContent = '';
+    }).dadosShopee();
+  }
+
+  function receber(d) {
+    estado.carregando = false;
+    estado.carregado = true;
+    estado.dados = d;
+    estado.limite = {};
+    $('atualizarShopee').disabled = false;
+    $('atualizadoShopee').textContent = 'Lido em ' + d.atualizadoEm;
+    if (!d.abaEncontrada) avisar('A aba Retorno_Extensão não foi encontrada. Use o menu Correios › "Importar Retorno_Extensão (Shopee)".');
+    else if (d.faltando.length) avisar('Coluna(s) não encontrada(s) na aba Retorno_Extensão: ' + d.faltando.join(', ') + '.');
+    else avisar('');
+    desenhar();
+  }
+
+  /* ---------- Desenho ---------- */
+
+  function filtrados() {
+    var termo = normalizar($('buscaShopee').value);
+    var lista = estado.dados ? estado.dados.pedidos : [];
+    if (!termo) return lista;
+    return lista.filter(function (p) {
+      return normalizar(p.shopee).indexOf(termo) >= 0 || normalizar(p.pedido).indexOf(termo) >= 0;
+    });
+  }
+
+  function desenhar() {
+    var d = estado.dados;
+    if (!d) return;
+    var termo = $('buscaShopee').value.trim();
+    var lista = filtrados();
+    var porColuna = {};
+    var semColuna = 0;
+    d.colunas.forEach(function (c) { porColuna[c.id] = []; });
+    lista.forEach(function (p) {
+      if (porColuna[p.coluna]) porColuna[p.coluna].push(p); else semColuna++;
+    });
+
+    $('infoShopee').textContent = termo
+      ? numero(lista.length) + ' de ' + numero(d.pedidos.length) + ' pedido(s) na pesquisa'
+      : numero(d.pedidos.length) + ' pedido(s) na aba Retorno_Extensão';
+
+    // pedidos que nenhuma regra pôs em coluna (as regras das colunas ainda serão definidas)
+    var regra = $('regraShopee');
+    regra.hidden = !semColuna;
+    regra.textContent = semColuna
+      ? numero(semColuna) + ' pedido(s) ' + (termo ? 'da pesquisa ' : '') + 'ainda sem coluna: as regras de cada coluna do quadro ainda não foram definidas.'
+      : '';
+
+    $('kanbanShopee').innerHTML = d.colunas.map(function (c) {
+      var itens = porColuna[c.id];
+      var limite = estado.limite[c.id] || POR_VEZ;
+      var cartoes = itens.slice(0, limite).map(cartao).join('');
+      var vazio = '<li class="kanban-vazio">' + (termo ? 'Nenhum pedido da pesquisa nesta coluna.' : 'Nenhum pedido nesta coluna.') + '</li>';
+      var resto = itens.length - limite;
+      return '<section class="kanban-coluna' + (itens.length ? ' com-itens' : '') + '" data-coluna="' + escapar(c.id) + '" aria-label="' + escapar(c.titulo) + '">' +
+        '<header class="kanban-cabecalho"><h2 class="kanban-titulo">' + escapar(c.titulo) + '</h2>' +
+        '<span class="contador kanban-contador">' + numero(itens.length) + '</span></header>' +
+        '<ul class="kanban-lista">' + (cartoes || vazio) + '</ul>' +
+        (resto > 0 ? '<button type="button" class="btn btn-secundario kanban-mais" data-mais="' + escapar(c.id) + '">Mostrar mais (' + numero(resto) + ')</button>' : '') +
+        '</section>';
+    }).join('');
+  }
+
+  function cartao(p) {
+    var linhas = [];
+    linhas.push('<div class="kanban-linha"><span>Pedido</span>' +
+      (p.pedido ? '<span class="mono">' + escapar(p.pedido) + '</span>' : '<span>—</span>') + '</div>');
+    var extras = [];
+    if (p.situacao) extras.push('<span class="chip chip-neutro" title="' + escapar(p.situacao) + '">' + escapar(p.situacao) + '</span>');
+    if (p.prazo) {
+      extras.push('<span class="kanban-prazo"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>' +
+        escapar(p.prazo) + '</span>');
+    }
+    if (extras.length) linhas.push('<div class="kanban-linha">' + extras.join('') + '</div>');
+    return '<li class="kanban-cartao"><div class="kanban-codigo" title="Pedido Shopee">' + escapar(p.shopee) + '</div>' + linhas.join('') + '</li>';
+  }
+
+  /* ---------- Eventos ---------- */
+
+  document.addEventListener('DOMContentLoaded', function () {
+    $('buscaShopee').addEventListener('input', function () { estado.limite = {}; desenhar(); });
+    $('limparShopee').addEventListener('click', function () { $('buscaShopee').value = ''; estado.limite = {}; desenhar(); });
+    $('atualizarShopee').addEventListener('click', carregar);
+    $('kanbanShopee').addEventListener('click', function (e) {
+      var b = e.target.closest('[data-mais]');
+      if (!b) return;
+      var id = b.getAttribute('data-mais');
+      estado.limite[id] = (estado.limite[id] || POR_VEZ) + POR_VEZ;
+      desenhar();
+    });
+  });
+
+  // lê na primeira abertura da vista (depois, pelo botão Atualizar)
+  document.addEventListener('vistamostrada', function (e) { if (e.detail === VISTA && !estado.carregado) carregar(); });
+})();
+</script>

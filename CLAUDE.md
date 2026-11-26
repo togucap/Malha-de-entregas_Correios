@@ -20,7 +20,9 @@ Pastas no GitHub: `gs/` (servidor), `html/` (páginas), `css/` e `js/` (estilos 
 - `Planilha.gs` — menu **Correios** (`onOpen`) e atualização da aba base: lê `Autorização Postagem`, grava `Código convertido`, `Status tracking`, `Data Ocorrencia`, `cidade ultima interação` e `Data Prevista Entrega` (Reversa → Rastro).
 - `Relatorios.gs` — percorre relatórios em pastas do Drive (pasta definida em cada cruzamento; drive compartilhado), achando o arquivo pelo nome com ou sem extensão (`.xlsx`, `.xls`, `.csv`, `.json`): planilha Google, `.xlsx`/`.xls` (cópia convertida temporária via serviço avançado Drive API v3, enviada à lixeira) e `.csv` (baixado em partes, linha a linha).
 - `Importacao.gs` — botão "Importar protocolos do Drive": alimenta a aba base com o relatório `Consolidado_Protocolos` (remove duplicados e linhas sem autorização, acrescenta protocolos novos; cópia oculta `<aba>_backup` antes de gravar).
-- `RetornoExtensao.gs` — aba **Retorno_Extensão** abastecida com o JSON `Retorno_Extensao_Shopee` do Drive (pedido, situacao, prazo, origem); menu "Importar Retorno_Extensão (Shopee)" e passo da cadeia (ver seção própria).
+- `RetornoExtensao.gs` — aba **Retorno_Extensão** abastecida com o JSON `Retorno_Extensao_Shopee` do Drive (`pedido` → `Pedido_Shopee`, situacao, prazo, origem; colunas extras como `Pedido` mantidas pelo `Pedido_Shopee`); menu "Importar Retorno_Extensão (Shopee)" e passo da cadeia (ver seção própria).
+- `CruzamentoShopee.gs` — cruzamento **manual** `Retorno_Extensão.Pedido_Shopee` × `parceiro_pedido` do `Consolidado_Anymarket_OUT` → coluna `Pedido` (`pedido_codigo`); menu "Cruzar Retorno_Extensão com Anymarket (Pedido)" (ver seção da aba).
+- `Shopee.gs` — `dadosShopee()` para a vista "Shopee" (kanban): colunas `KANBAN_SHOPEE`, regra `colunaKanbanShopee_` (a definir).
 - `Cruzamentos.gs` — lista `CRUZAMENTOS` (id, pasta, arquivo, chave da base, chave do relatório, chave composta com rastreio, exclusão de linhas de outro cruzamento, colunas trazidas ou de presença Sim/Não) e o botão de menu "Cruzar com relatórios do Drive", que executa todos na ordem da lista.
 - `Intelipost.gs` — consulta Jadlog via Web App proxy corporativo da Intelipost: lote (uma chamada por lote), consulta crua da tela de teste e amostra de protocolos da base.
 - `IntelipostParser.gs` — interpreta `{ sucesso, dados }` do proxy: eventos do `detalhes.historico` por pedido (com `descricao` e `estadoTraduzido`), último evento, cidade, previsão de entrega se o proxy enviar (`CAMPOS_PREVISAO_INTELIPOST`); `statusIntelipost_`.
@@ -34,6 +36,7 @@ Pastas no GitHub: `gs/` (servidor), `html/` (páginas), `css/` e `js/` (estilos 
 - `html/VistaAcompanhamento.html` + `css/EstiloAcompanhamento.html` + `js/TelaAcompanhamento.html` — tela "Acompanhamento - OUT" (estrutura, estilo, lógica).
 - `html/ModalHistorico.html` + `css/EstiloHistorico.html` + `js/HistoricoTracking.html` — janela "Histórico de rastreio" (`window.HistoricoTracking.abrir`).
 - `html/VistaCruzamentos.html` + `css/EstiloCruzamentos.html` + `js/TelaCruzamentos.html` — vista "Cruzamentos" = painel de execuções com luzes (ver seção própria).
+- `html/VistaShopee.html` + `css/EstiloShopee.html` + `js/TelaShopee.html` — vista "Shopee": quadro kanban dos pedidos da aba Retorno_Extensão (ver seção própria).
 - `js/Agencia.html` + `css/EstiloAgencia.html` — agência de triagem animada (canvas, pixel art isométrica) da vista Cruzamentos, com a equipe, a ficha e o rastreamento dos malotes (`window.Agencia.atualizar(dados)`).
 - `js/StatusVisual.html` — `window.classeStatus(status)`: cor do chip de status, usada pela tabela e pela janela de histórico.
 - `js/FiltroMultiplo.html` + `css/EstiloFiltroMultiplo.html` — componente reutilizável de filtro em dropdown com seleção múltipla (`window.FiltroMultiplo`: `preencher`, `selecionados`, `limpar`).
@@ -47,7 +50,7 @@ Pastas no GitHub: `gs/` (servidor), `html/` (páginas), `css/` e `js/` (estilos 
 - CSS dos componentes usa **só** `var(--…)` de `css/Tokens` (nenhuma cor fixa). Raios: 8 controles, 9 segmentado, 12 cartões, 999 pílulas. Sem sombra em cartões (só `--shadow-pop` em modais/menus); sem gradientes.
 - Cores semânticas: laranja = ação principal/ativo/foco/progresso (nunca erro); verde = sucesso; vermelho = erro/bloqueio (`.btn-perigo` só para destrutivo); violeta = fora do padrão; azul = informação; neutro = pendente/sem dados. Indicador com 0 fica neutro. Estado na tabela por chip ou barra de 4 px, nunca pintando a linha.
 - Responsivo: ≤ 900 px a barra lateral vira só ícones; funciona a 360 px sem rolagem horizontal.
-- Vistas: Visão geral, **Acompanhamento - OUT**, Protocolos, Rastreio, **Cruzamentos** (painel de execuções), Configurações (as demais vazias por enquanto). Tela nova = arquivo `html/Vista<Nome>` com a `<section class="vista" data-vista="…">` (incluído no Painel), `css/Estilo<Nome>` e `js/Tela<Nome>`; a navegação dispara o evento `vistamostrada` (detail = vista) para a tela carregar seus dados na primeira abertura.
+- Vistas: Visão geral, **Acompanhamento - OUT**, **Shopee** (kanban; antes "Protocolos"), Rastreio, **Cruzamentos** (painel de execuções), Configurações (as demais vazias por enquanto). Tela nova = arquivo `html/Vista<Nome>` com a `<section class="vista" data-vista="…">` (incluído no Painel), `css/Estilo<Nome>` e `js/Tela<Nome>`; a navegação dispara o evento `vistamostrada` (detail = vista) para a tela carregar seus dados na primeira abertura.
 - `[hidden]` esconde sempre (`display: none !important` no Base), inclusive componentes com `display` próprio.
 
 ### Tela "Acompanhamento - OUT"
@@ -105,11 +108,24 @@ Pastas no GitHub: `gs/` (servidor), `html/` (páginas), `css/` e `js/` (estilos 
 ## Aba Retorno_Extensão (`RetornoExtensao.gs`)
 
 - Fonte: JSON `Retorno_Extensao_Shopee` (com ou sem `.json`) na pasta `1Zk2F78…` do Drive (`RETORNO_EXTENSAO`), gerado pela extensão de retornos da Shopee. Formato confirmado (versao 1): `{ versao, atualizadoEm, totalPedidos, pedidos: { "<pedido>": { pedido, primeiroEnvio, situacao, statusSolicitacao, prazo, venceAprox, origem, ultimoEnvio, enviadoPor } } }` (também aceita `pedidos` como lista; sem `pedido` no registro, usa a chave).
-- Grava na aba **Retorno_Extensão** (achada sem diferenciar acento/maiúsculas; criada se não existir) as colunas `pedido`, `situacao`, `prazo`, `origem`, uma linha por pedido, na ordem do arquivo. Os demais campos (inclusive `enviadoPor`) não são gravados.
-- A aba é **regravada inteira** a cada importação (o arquivo é a fonte); `pedido` como texto (`@`); cabeçalho congelado; nota em A1 com a data da importação e o `atualizadoEm` do arquivo.
+- Grava na aba **Retorno_Extensão** (achada sem diferenciar acento/maiúsculas; criada se não existir) as colunas `Pedido_Shopee` (campo `pedido` do JSON; renomeada em nov/2026 porque a aba ganhou a coluna `Pedido`), `situacao`, `prazo`, `origem`, uma linha por pedido, na ordem do arquivo. Os demais campos (inclusive `enviadoPor`) não são gravados. Aba antiga com o título `pedido` (e sem `Pedido_Shopee`): o título vira `Pedido_Shopee`.
+- As **linhas são regravadas** a cada importação (o arquivo é a fonte; pedido que sai do arquivo sai da aba). A ordem e os títulos das colunas da aba são mantidos (colunas do arquivo que faltarem entram no fim). **Colunas que não vêm do arquivo** (ex.: `Pedido`, do cruzamento manual) são mantidas: o valor acompanha o `Pedido_Shopee` da linha (formato texto mantido). `Pedido_Shopee` como texto (`@`); cabeçalho congelado; nota no cabeçalho `Pedido_Shopee` com a data da importação e o `atualizadoEm` do arquivo.
+- Usa o lock do script (espera até 10 s; ocupado = não atualiza e avisa). Cancela um cruzamento do `Pedido` pela metade (as linhas mudaram de posição) e avisa na mensagem.
 - Arquivo ausente ou JSON inválido: a aba não muda e a mensagem diz o motivo (toast no menu; alerta na cadeia).
 - Valores observados (nov/2026): `situacao` "Não encontrado", `origem` "shopee-retornos", `prazo` em texto ("Vence em N dias/horas", vazio na maioria).
 - Entradas: menu Correios › "Importar Retorno_Extensão (Shopee)", cadeia (logo após a importação dos protocolos) e `importarRetornoExtensao()` (acionador/editor).
+
+### Cruzamento do `Pedido` (`CruzamentoShopee.gs`, manual)
+- `CRUZAMENTO_SHOPEE`: `Pedido_Shopee` da aba Retorno_Extensão × `parceiro_pedido` do `Consolidado_Anymarket_OUT` (pasta `1Zk2F78…`, mesmo arquivo do cruzamento `parceiros`) → `pedido_codigo` na coluna **`Pedido`** (criada no fim se faltar; texto `@`, todos os dígitos). Mesmo motor (`executarEtapaCruzamento_`) e regras dos cruzamentos da base: primeiro valor preenchido; sem correspondência, a célula fica como estava.
+- **Só manual** por enquanto: menu Correios › "Cruzar Retorno_Extensão com Anymarket (Pedido)" (`menuCruzarPedidoShopee`) ou `cruzarPedidoShopee()` no editor. Fora da cadeia e do painel de execuções (entrará no fluxo depois).
+- CSV retomável como os demais: estado em `CRUZ_SHOPEE_ESTADO` (inclui a última linha da aba; se a aba mudar no meio, a rodada para com aviso), bits em `CRUZ_BITS_pedidoShopee_*`, continuação `continuarCruzamentoShopee` (~1 min) + gatilho de segurança, `MAX_FALHAS`. `limparEstadoCruzamentos_` (rodada da base) só apaga os bits dos itens de `CRUZAMENTOS`. "Cancelar continuação automática" também cancela este cruzamento.
+- Resultado: toast (ou registro de execuções na continuação) e nota no cabeçalho da coluna `Pedido`.
+
+### Vista "Shopee" (kanban)
+- `dadosShopee()` (`gs/Shopee.gs`) lê a aba Retorno_Extensão: `{ colunas: KANBAN_SHOPEE, pedidos: [{ shopee, pedido, situacao, prazo, origem, coluna }], faltando, abaEncontrada, atualizadoEm }`.
+- Colunas do quadro (`KANBAN_SHOPEE`): **Pendente de atendimento**, **Em transporte**, **Entregue**, **Finalizados** (barra de 4 px no topo: laranja, azul, verde, neutro). **O que cada coluna recebe ainda será definido**: a regra fica em `colunaKanbanShopee_(p)` (devolve o id da coluna ou `''`); hoje devolve `''`, e a tela avisa quantos pedidos estão "ainda sem coluna".
+- Cartão: `Pedido_Shopee` (mono), `Pedido` (— se vazio), chip neutro da `situacao`, `prazo` com relógio. 50 cartões por coluna ("Mostrar mais"); lista com rolagem própria. Pesquisa no navegador (sem acento/maiúsculas, parte do texto) em Pedido Shopee e Pedido; Limpar e Atualizar (relê a aba). Carrega na primeira abertura da vista.
+- Responsivo: 4 colunas; ≤ 1200 px, 2; ≤ 700 px, 1.
 
 ## Configuração
 

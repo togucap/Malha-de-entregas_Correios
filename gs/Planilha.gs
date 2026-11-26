@@ -24,6 +24,7 @@ function onOpen() {
     .addItem('Importar protocolos e atualizar tudo (relatórios → tracking → JSON)', 'menuImportarProtocolos')
     .addItem('Cruzar com relatórios do Drive', 'menuCruzarRelatorios')
     .addItem('Importar Retorno_Extensão (Shopee)', 'menuImportarRetornoExtensao')
+    .addItem('Cruzar Retorno_Extensão com Anymarket (Pedido)', 'menuCruzarPedidoShopee')
     .addItem('Gerar Payload_Tracking (JSON)', 'menuGerarPayloadTracking')
     .addSeparator()
     .addItem('Abrir painel', 'abrirPainel')
@@ -55,6 +56,7 @@ function menuCancelarContinuacao() {
   try {
     encerrarCiclo_();
     limparEstadoCruzamentos_();
+    limparCruzamentoShopee_();
     cancelarCadeia_();
   } finally {
     lock.releaseLock();

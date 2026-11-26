@@ -1,0 +1,104 @@
+<style>
+/* Vista "Shopee": quadro kanban. Só tokens. Estado de cada coluna por uma barra de 4 px no topo. */
+
+.barra-shopee {
+  display: grid;
+  grid-template-columns: minmax(240px, 480px) auto;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: end;
+}
+#avisoShopee, #regraShopee { margin-bottom: 12px; }
+
+/* a barra do Acompanhamento usa áreas nomeadas para .campo-busca/.acoes-filtro; aqui não */
+.barra-shopee .campo-busca, .barra-shopee .acoes-filtro { grid-area: auto; }
+
+.kanban {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+.kanban-coluna {
+  --kanban-cor: var(--text-support);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-color);
+  border-top: 4px solid var(--kanban-cor);
+  border-radius: 12px;
+}
+.kanban-coluna[data-coluna="pendente"] { --kanban-cor: var(--brand-accent); }
+.kanban-coluna[data-coluna="transporte"] { --kanban-cor: var(--blue); }
+.kanban-coluna[data-coluna="entregue"] { --kanban-cor: var(--emerald); }
+.kanban-coluna[data-coluna="finalizados"] { --kanban-cor: var(--text-support); }
+
+.kanban-cabecalho {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border-color);
+}
+.kanban-titulo { margin: 0; font-size: 14px; font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+.kanban-contador { background: var(--neutral-soft); color: var(--text-support); font-variant-numeric: tabular-nums; }
+.kanban-coluna.com-itens .kanban-contador { background: var(--bg-card); color: var(--text-main); }
+
+.kanban-lista {
+  list-style: none;
+  margin: 0;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: calc(100vh - 330px);
+  min-height: 160px;
+  overflow-y: auto;
+}
+
+.kanban-vazio {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 140px;
+  padding: 12px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-support);
+  border: 1px dashed var(--border-color);
+  border-radius: 8px;
+}
+
+.kanban-cartao {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.kanban-cartao:hover { border-color: var(--border-strong); }
+.kanban-codigo { font-family: 'IBM Plex Mono', monospace; font-weight: 600; font-size: 14px; overflow-wrap: anywhere; }
+.kanban-linha { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 12px; color: var(--text-support); }
+.kanban-linha .mono { font-family: 'IBM Plex Mono', monospace; font-weight: 600; color: var(--text-main); }
+.kanban-linha .chip { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kanban-prazo { display: inline-flex; align-items: center; gap: 4px; }
+.kanban-prazo .icone { width: 14px; height: 14px; }
+
+.kanban-mais { margin: 0 10px 10px; }
+
+@media (max-width: 1200px) {
+  .kanban { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 700px) {
+  .barra-shopee { grid-template-columns: 1fr; }
+  .barra-shopee .acoes-filtro .btn { flex: 1 1 auto; }
+  .kanban { grid-template-columns: 1fr; }
+  .kanban-lista { max-height: 420px; }
+}
+</style>

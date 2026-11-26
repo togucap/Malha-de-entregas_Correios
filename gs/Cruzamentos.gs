@@ -358,8 +358,11 @@ function salvarEstadoCruzamentos_(estado) {
 // Fim da rodada (ou cancelamento): apaga estado, mapas de bits e gatilho pendente
 function limparEstadoCruzamentos_() {
   const props = PropertiesService.getScriptProperties();
+  props.deleteProperty(CRUZ_ESTADO_PROP);
+  // só os mapas dos itens de CRUZAMENTOS (o cruzamento manual da aba Retorno_Extensão tem os seus)
+  const prefixos = CRUZAMENTOS.map(function (c) { return CRUZ_BITS_PREFIXO + c.id + '_'; });
   Object.keys(props.getProperties()).forEach(function (k) {
-    if (k === CRUZ_ESTADO_PROP || k.indexOf(CRUZ_BITS_PREFIXO) === 0) props.deleteProperty(k);
+    if (prefixos.some(function (p) { return k.indexOf(p) === 0; })) props.deleteProperty(k);
   });
   removerGatilhos_(FUNCAO_CONTINUAR_CRUZAMENTOS);
 }

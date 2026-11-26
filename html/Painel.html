@@ -15,6 +15,7 @@
   <?!= include('EstiloHistorico'); ?>
   <?!= include('EstiloCruzamentos'); ?>
   <?!= include('EstiloAgencia'); ?>
+  <?!= include('EstiloShopee'); ?>
   <?!= include('Tema'); ?>
 </head>
 <body>
@@ -39,9 +40,9 @@
         <svg class="icone" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5h11M9 12h11M9 19h11"/><path d="m3 5 1 1 2-2M3 12l1 1 2-2M3 19l1 1 2-2"/></svg>
         <span class="nav-texto">Acompanhamento - OUT</span>
       </button>
-      <button class="nav-item" data-vista="protocolos" data-titulo="Protocolos" data-subtitulo="Base de protocolos e autorizações">
-        <svg class="icone" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 8 12 3 3 8v8l9 5 9-5V8z"/><path d="m3 8 9 5 9-5"/><path d="M12 13v8"/></svg>
-        <span class="nav-texto">Protocolos</span>
+      <button class="nav-item" data-vista="shopee" data-titulo="Shopee" data-subtitulo="Retornos da Shopee (aba Retorno_Extensão)">
+        <svg class="icone" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 8h14l-1 12H6L5 8z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/></svg>
+        <span class="nav-texto">Shopee</span>
       </button>
       <button class="nav-item" data-vista="rastreio" data-titulo="Rastreio" data-subtitulo="Status de tracking dos objetos">
         <svg class="icone" viewBox="0 0 24 24" aria-hidden="true"><path d="M1 3h15v13H1z"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
@@ -86,13 +87,7 @@
 
     <?!= include('VistaAcompanhamento'); ?>
 
-    <section class="vista" data-vista="protocolos" hidden>
-      <div class="card-container vazio">
-        <div class="vazio-icone"><svg class="icone" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 8 12 3 3 8v8l9 5 9-5V8z"/><path d="m3 8 9 5 9-5"/></svg></div>
-        <div class="vazio-titulo">Protocolos em construção</div>
-        <div class="vazio-texto">A consulta da base de protocolos aparecerá aqui.</div>
-      </div>
-    </section>
+    <?!= include('VistaShopee'); ?>
 
     <section class="vista" data-vista="rastreio" hidden>
       <div class="card-container vazio">
@@ -121,6 +116,7 @@
   <?!= include('TelaAcompanhamento'); ?>
   <?!= include('Agencia'); ?>
   <?!= include('TelaCruzamentos'); ?>
+  <?!= include('TelaShopee'); ?>
   <?!= include('Navegacao'); ?>
 </body>
 </html>
