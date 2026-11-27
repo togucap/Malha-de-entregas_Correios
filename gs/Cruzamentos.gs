@@ -108,6 +108,7 @@ function iniciarCruzamentos_(origem) {
     erroCruzamentos_(e);
     throw e;
   } finally {
+    regerarPainelDadosSeguro_('relatórios do Drive'); // colunas da base regravadas
     lock.releaseLock();
   }
 }
@@ -140,8 +141,10 @@ function continuarCruzamentos(e) {
     const texto = PropertiesService.getScriptProperties().getProperty(CRUZ_ESTADO_PROP);
     if (!texto) return;
     console.log(executarCruzamentos_(JSON.parse(texto)));
+    regerarPainelDadosSeguro_('relatórios do Drive');
   } catch (e) {
     erroCruzamentos_(e);
+    regerarPainelDadosSeguro_('relatórios do Drive');
     throw e;
   } finally {
     lock.releaseLock();
@@ -284,7 +287,6 @@ function executarEtapaCruzamento_(aba, c, prazo, retomada) {
     }
     rng.setValues(valores);
   });
-  invalidarDadosPainel_();
 
   if (rel.retomada) {
     salvarListaBits_(c.id, bits);
@@ -308,7 +310,6 @@ function executarEtapaCruzamento_(aba, c, prazo, retomada) {
     }
     rng.setValues(valores);
   });
-  invalidarDadosPainel_();
   salvarListaBits_(c.id, [bits[0]]); // linhas com correspondência, para quem depende deste cruzamento
 
   return {

@@ -26,6 +26,7 @@ function onOpen() {
     .addItem('Importar Retorno_Extensão (Shopee)', 'menuImportarRetornoExtensao')
     .addItem('Cruzar Retorno_Extensão com Anymarket (Pedido)', 'menuCruzarPedidoShopee')
     .addItem('Gerar Payload_Tracking (JSON)', 'menuGerarPayloadTracking')
+    .addItem('Regerar dados do painel', 'menuRegerarPainelDados')
     .addSeparator()
     .addItem('Abrir painel', 'abrirPainel')
     .addItem('Tela de teste das APIs', 'abrirTeste')
@@ -211,7 +212,7 @@ function atualizar_(reprocessar, automatico, origem) {
       aba.getRange(cab + 1 + de, colData, ate - de + 1, 1).setValues(dados.datas.slice(de, ate + 1));
       aba.getRange(cab + 1 + de, colCidade, ate - de + 1, 1).setValues(dados.cidades.slice(de, ate + 1));
       aba.getRange(cab + 1 + de, colPrevisao, ate - de + 1, 1).setValues(dados.previsoes.slice(de, ate + 1));
-      invalidarDadosPainel_();
+      registrarLinhasBaseSeguro_(aba, cab + 1 + de, ate - de + 1, 'tracking'); // chega aos painéis em até 30 s
 
       somarContagem_(rastro, r);
       somarContagem_(intelipost, r.intelipost);
@@ -234,6 +235,7 @@ function atualizar_(reprocessar, automatico, origem) {
     statusTrackingProgresso_(feitas, pendentes.length - feitas, false);
   }
 
+  if (feitas) regerarPainelDadosSeguro_('tracking'); // JSON do painel com o resultado desta execução
   let msg = feitas + ' linha(s) atualizada(s) na aba "' + aba.getName() + '".' +
     resumoConsultas_('Rastro', rastro) + resumoConsultas_('Intelipost', intelipost) +
     (comJadlog ? '' : ' Jadlog não consultado (' + (dados.protocolos ? PROP_INTELIPOST_URL + ' não configurada' : 'coluna "' + cfg.COL_PROTOCOLO + '" não encontrada') + ').');

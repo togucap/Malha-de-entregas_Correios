@@ -46,6 +46,7 @@ function iniciarCruzamentoShopee_() {
     limparCruzamentoShopee_();
     return executarCruzamentoShopee_({ csv: null, semAvanco: 0 });
   } finally {
+    regerarPainelDadosSeguro_('cruzamento do Pedido (Shopee)'); // coluna Pedido da Retorno_Extensão
     lock.releaseLock();
   }
 }
@@ -62,6 +63,7 @@ function continuarCruzamentoShopee(e) {
     const texto = PropertiesService.getScriptProperties().getProperty(CRUZ_SHOPEE_ESTADO_PROP);
     if (!texto) return;
     console.log(executarCruzamentoShopee_(JSON.parse(texto)));
+    regerarPainelDadosSeguro_('cruzamento do Pedido (Shopee)');
   } finally {
     lock.releaseLock();
   }

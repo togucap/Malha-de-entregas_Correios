@@ -1,11 +1,12 @@
 <script>
 /*
- * Tela "Acompanhamento - OUT": carrega dadosAcompanhamentoOutJson() (cache do servidor, gs/CacheDados) em segundo
- * plano logo depois de o painel abrir ou na primeira vez que a tela é aberta ("Atualizar" ignora o cache);
- * visão, pesquisa e filtros rodam no navegador. Mostra 500 linhas por vez ("Mostrar mais").
+ * Tela "Acompanhamento - OUT": dados de js/DadosPainel (Painel_JSON + alterações; cópia no navegador,
+ * conferida a cada 30 s). Toda mudança redesenha a tela mantendo pesquisa, filtros e "Mostrar mais";
+ * "Atualizar" confere na hora. Visão, pesquisa e filtros rodam no navegador. 500 linhas por vez.
  *
  * - Visão "Em aberto" (padrão) = status ainda consultado pelas APIs; "Finalizado" = status final
- *   (mesma regra da atualização, calculada no servidor). Nenhuma linha é descartada: só muda a visão.
+ *   (mesma regra da atualização, enviada pelo servidor). Finalizados com mais de 25 dias não vêm no JSON:
+ *   entram só no total mostrado no resumo da visão "Finalizado".
  * - Pesquisa: com termo, mostra os resultados das duas visões (em aberto e finalizados) juntos;
  *   cada botão da visão mostra quantos resultados tem com a pesquisa e os filtros atuais.
  * - Filtros: js/FiltroMultiplo (seleção múltipla; nenhum marcado = todos). As opções de cada filtro
@@ -47,49 +48,41 @@
 
   /* ---------- Carregamento ---------- */
 
-  // forcar = true: relê a base (botão Atualizar); senão o servidor pode responder do cache (gs/CacheDados)
-  function carregar(forcar) {
-    if (estado.carregando) return;
-    estado.carregado = true;
-    $('avisoOut').hidden = true;
-    $('infoOut').textContent = 'Carregando…';
-    $('atualizarOut').disabled = true;
-    if (!window.google || !google.script || !google.script.run) {
-      falhar({ message: 'Abra o painel pelo Apps Script (menu Correios › Abrir painel ou App da Web).' });
-      return;
-    }
-    estado.carregando = true;
-    google.script.run.withSuccessHandler(function (texto) {
-      var d;
-      try { d = typeof texto === 'string' ? JSON.parse(texto) : texto; } catch (e) { falhar(e); return; }
-      receber(d);
-    }).withFailureHandler(falhar).dadosAcompanhamentoOutJson(!!forcar);
+  // botão Atualizar: confere com o servidor agora
+  function carregar() {
+    if (window.DadosPainel) DadosPainel.atualizar();
   }
 
-  function receber(d) {
-    estado.carregando = false;
-    $('atualizarOut').disabled = false;
+  // avisos de js/DadosPainel: dados novos redesenham; os demais só atualizam o estado da leitura
+  function ouvir(motivo) {
+    var st = DadosPainel.estado();
+    $('atualizarOut').disabled = st.carregando;
+    $('atualizadoOut').textContent = DadosPainel.textoAtualizacao();
+    if (st.erro) avisar(st.erro);
+    else if (estado.faltandoTexto) avisar(estado.faltandoTexto);
+    else $('avisoOut').hidden = true;
+    if ((motivo === 'local' || motivo === 'dados') && st.pronto) receber(DadosPainel.telaAcompanhamento(), estado.carregado);
+    else if (!st.pronto) $('infoOut').textContent = st.erro ? '' : 'Carregando…';
+  }
+
+  // manter = atualização automática: preserva "Mostrar mais"
+  function receber(d, manter) {
+    estado.carregado = true;
+    estado.fora = d.finalizadosForaPorParceiro || {};
+    estado.dias = d.diasFinalizados;
     estado.colunas = d.colunas;          // nomes na base (usados para achar as colunas)
     estado.rotulos = d.rotulos || d.colunas; // títulos do cabeçalho
     var busca = BUSCA.map(indice);
     estado.linhas = d.linhas.map(function (v, k) {
       return { v: v, finalizada: !!(d.finalizadas && d.finalizadas[k]), busca: normalizar(busca.map(function (i) { return v[i]; }).join(' ')) };
     });
-    $('atualizadoOut').textContent = 'Base lida em ' + d.atualizadoEm;
     estado.pesquisando = !!termoBusca();
-    if (d.faltando && d.faltando.length) {
-      avisar('Colunas não encontradas na base: ' + d.faltando.join(', ') + '. Elas aparecem vazias.');
-    }
+    estado.faltandoTexto = d.faltando && d.faltando.length
+      ? 'Colunas não encontradas na base: ' + d.faltando.join(', ') + '. Elas aparecem vazias.' : '';
+    if (estado.faltandoTexto) avisar(estado.faltandoTexto);
     montarCabecalho();
     montarFiltros();
-    aplicar();
-  }
-
-  function falhar(e) {
-    estado.carregando = false;
-    $('atualizarOut').disabled = false;
-    $('infoOut').textContent = '';
-    avisar('Não foi possível ler a base: ' + (e && e.message ? e.message : e));
+    aplicar(manter);
   }
 
   function avisar(texto) {
@@ -142,7 +135,7 @@
   }
 
   // chamada pelos filtros (data-ao-mudar), pela pesquisa e pela troca de visão
-  function aplicar() {
+  function aplicar(manterLimite) {
     var pesquisando = !!termoBusca();
     if (pesquisando !== estado.pesquisando) {
       estado.pesquisando = pesquisando;
@@ -158,7 +151,7 @@
     });
     $('qtdAbertoOut').textContent = abertos.toLocaleString('pt-BR');
     $('qtdFinalizadoOut').textContent = finalizados.toLocaleString('pt-BR');
-    estado.limite = POR_PAGINA;
+    if (manterLimite !== true) estado.limite = POR_PAGINA;
     estado.naOutraVisao = estado.pesquisando ? 0 : estado.visao === 'aberto' ? finalizados : abertos;
     estado.qtd = { abertos: abertos, finalizados: finalizados };
     desenharLinhas();
@@ -240,8 +233,18 @@
         estado.qtd.finalizados.toLocaleString('pt-BR') + ' finalizado(s))'
       : ' ' + nomeVisao;
     $('infoOut').textContent = achadas.toLocaleString('pt-BR') + ' protocolo(s)' + descricao +
-      (achadas > visiveis.length ? ' · mostrando ' + visiveis.length.toLocaleString('pt-BR') : '');
+      (achadas > visiveis.length ? ' · mostrando ' + visiveis.length.toLocaleString('pt-BR') : '') + textoAntigos();
     $('maisOut').hidden = achadas <= visiveis.length;
+  }
+
+  // finalizados com mais de 25 dias (fora do JSON): só no total, respeitando o filtro de parceiro
+  function textoAntigos() {
+    if (estado.visao !== 'finalizado' || estado.pesquisando || !estado.fora) return '';
+    var raiz = filtros().filter(function (r) { return r.getAttribute('data-coluna') === 'Parceiro_Nome'; })[0];
+    var escolhidos = raiz ? FiltroMultiplo.selecionados(raiz) : [];
+    var total = 0;
+    Object.keys(estado.fora).forEach(function (p) { if (!escolhidos.length || escolhidos.indexOf(p) >= 0) total += estado.fora[p]; });
+    return total ? ' · mais ' + total.toLocaleString('pt-BR') + ' finalizado(s) há mais de ' + estado.dias + ' dias (só no total)' : '';
   }
 
   /* ---------- Eventos ---------- */
@@ -257,7 +260,7 @@
       filtros().forEach(FiltroMultiplo.limpar);
       aplicar();
     });
-    $('atualizarOut').addEventListener('click', function () { carregar(true); });
+    $('atualizarOut').addEventListener('click', carregar);
     $('maisOut').addEventListener('click', function () { estado.limite += POR_PAGINA; desenharLinhas(); });
     // botão "Histórico" de cada linha (delegação: as linhas são redesenhadas a cada filtro)
     $('tabelaOut').tBodies[0].addEventListener('click', function (e) {
@@ -266,13 +269,9 @@
     });
   });
 
-  // carrega na primeira vez que a tela é aberta (evento disparado por js/Navegacao)
-  document.addEventListener('vistamostrada', function (e) {
-    if (e.detail === VISTA && !estado.carregado) carregar();
-  });
-  // pré-carregamento: lê em segundo plano logo depois de o painel abrir, mesmo com outra vista na tela
-  window.addEventListener('load', function () {
-    setTimeout(function () { if (!estado.carregado && window.google && google.script && google.script.run) carregar(); }, 1000);
+  // dados compartilhados (js/DadosPainel): cópia local na hora e conferência a cada 30 s
+  document.addEventListener('DOMContentLoaded', function () {
+    if (window.DadosPainel) DadosPainel.assinar(ouvir);
   });
 })();
 </script>

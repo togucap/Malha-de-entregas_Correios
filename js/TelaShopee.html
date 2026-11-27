@@ -1,14 +1,14 @@
 <script>
 /*
- * Vista "Shopee": quadro kanban (dadosShopeeJson, gs/CacheDados -> dadosShopee, gs/Shopee).
+ * Vista "Shopee": quadro kanban. Dados de js/DadosPainel (telaShopee: Painel_JSON + alterações, regras de gs/Shopee).
  * - Pendente de atendimento: cartões da aba Retorno_Extensão (título Pedido_Shopee; Pedido, prazo, statusSolicitacao).
  * - Em transporte, Entregue e Finalizados: cartões da aba base (título Pedido_Parceiro; Pedido, Status tracking,
  *   Assistência técnica Sim/Não, Entrada_Lista).
  * - Filtros FiltroMultiplo (data-campo = campo do cartão; cartão sem o campo conta como "(vazio)"):
  *   Status tracking, statusSolicitacao, prazo, Entrada_Lista, Assistência técnica. Opções = valores dos cartões
  *   que passam na pesquisa, com contagem. Mudança chama aplicarFiltrosShopee.
- * - Dados: lidos em segundo plano logo depois de o painel abrir (pré-carregamento) e servidos do cache do
- *   servidor; "Atualizar" relê as abas ignorando o cache.
+ * - Dados: cópia no navegador conferida a cada 30 s (js/DadosPainel); toda mudança redesenha mantendo pesquisa,
+ *   filtros e "Mostrar mais"; "Atualizar" confere na hora. Finalizados com mais de 25 dias só no total da coluna.
  * - Clique no cartão: janela com os dados de tracking (Data Ocorrencia, cidade, Data Prevista Entrega) e o
  *   botão "Consultar tracking em tempo real", que abre a janela de histórico (js/HistoricoTracking).
  * - Pesquisa no navegador (sem acento/maiúsculas, parte do texto) no título e no Pedido; 50 cartões por coluna.
@@ -18,7 +18,6 @@
   var VISTA = 'shopee';
   var POR_VEZ = 50;
   var VAZIO = '\u0000vazio';
-  var PRECARGA_MS = 1500;
   var estado = { dados: null, carregado: false, carregando: false, limite: {}, aberto: null, origem: null };
 
   var RELOGIO = '<svg class="icone" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
@@ -47,33 +46,24 @@
   function filtros() { return Array.prototype.slice.call(document.querySelectorAll('[data-vista="' + VISTA + '"] [data-filtro-multiplo]')); }
   function valorCampo(c, campo) { var v = c[campo]; return v == null ? '' : String(v); }
 
-  // forcar = true: relê as abas (botão Atualizar); senão o servidor pode responder do cache
-  function carregar(forcar) {
-    if (estado.carregando) return;
-    if (!window.google || !google.script || !google.script.run) {
-      avisar('Abra o painel pelo Apps Script (menu Correios › Abrir painel ou App da Web).');
-      $('infoShopee').textContent = '';
-      return;
-    }
-    estado.carregando = true;
-    $('atualizarShopee').disabled = true;
-    $('infoShopee').textContent = 'Carregando…';
-    google.script.run.withSuccessHandler(function (texto) {
-      var d;
-      try { d = typeof texto === 'string' ? JSON.parse(texto) : texto; } catch (e) { falhar(e); return; }
-      receber(d);
-    }).withFailureHandler(falhar).dadosShopeeJson(!!forcar);
+  // botão Atualizar: confere com o servidor agora
+  function carregar() {
+    if (window.DadosPainel) DadosPainel.atualizar();
   }
 
-  function falhar(e) {
-    estado.carregando = false;
-    $('atualizarShopee').disabled = false;
-    avisar('Não foi possível ler as abas: ' + (e && e.message ? e.message : e));
-    $('infoShopee').textContent = '';
+  // avisos de js/DadosPainel: dados novos redesenham; os demais só atualizam o estado da leitura
+  function ouvir(motivo) {
+    var st = DadosPainel.estado();
+    $('atualizarShopee').disabled = st.carregando;
+    $('atualizadoShopee').textContent = DadosPainel.textoAtualizacao();
+    if ((motivo === 'local' || motivo === 'dados') && st.pronto) receber(DadosPainel.telaShopee(), estado.carregado);
+    else if (st.erro) avisar(st.erro);
+    else if (!st.pronto) $('infoShopee').textContent = 'Carregando…';
+    if (!st.erro && motivo === 'conferido') avisar(estado.avisos || '');
   }
 
-  function receber(d) {
-    estado.carregando = false;
+  // manter = atualização automática: preserva "Mostrar mais"
+  function receber(d, manter) {
     estado.carregado = true;
     estado.dados = d;
     d.cartoes.forEach(function (c, i) {
@@ -82,15 +72,13 @@
         codigo: c.codigo, autorizacao: c.autorizacao, protocolo: c.protocolo, pedido: c.pedido };
       c.busca = normalizar(c.titulo + ' ' + c.pedido);
     });
-    estado.limite = {};
-    $('atualizarShopee').disabled = false;
-    $('atualizadoShopee').textContent = 'Lido em ' + d.atualizadoEm;
     var avisos = [];
     if (!d.abaRetorno) avisos.push('A aba Retorno_Extensão não foi encontrada (menu Correios › "Importar Retorno_Extensão (Shopee)").');
     if (d.faltando.length) avisos.push('Coluna(s) não encontrada(s): ' + d.faltando.join(', ') + '.');
-    avisar(avisos.join(' '));
-    estado.termo = null; // força montar as opções dos filtros
-    aplicar();
+    estado.avisos = avisos.join(' ');
+    avisar(estado.avisos);
+    estado.termo = null; // força montar as opções dos filtros (contagens novas; marcados continuam)
+    aplicar(manter);
   }
 
   /* ---------- Quadro ---------- */
@@ -114,7 +102,7 @@
   }
 
   // pesquisa + filtros; as opções dos filtros só são remontadas quando a pesquisa muda
-  function aplicar() {
+  function aplicar(manterLimite) {
     if (!estado.dados) return;
     var termo = normalizar($('buscaShopee').value);
     var naPesquisa = termo ? estado.dados.cartoes.filter(function (c) { return c.busca.indexOf(termo) >= 0; }) : estado.dados.cartoes;
@@ -129,7 +117,7 @@
       return true;
     });
     estado.comFiltro = !!termo || ativos.length > 0;
-    estado.limite = {};
+    if (manterLimite !== true) estado.limite = {};
     desenhar();
   }
   window.aplicarFiltrosShopee = aplicar;
@@ -158,6 +146,7 @@
       return '<section class="kanban-coluna' + (itens.length ? ' com-itens' : '') + '" data-coluna="' + escapar(col.id) + '" aria-label="' + escapar(col.titulo) + '">' +
         '<header class="kanban-cabecalho"><h2 class="kanban-titulo">' + escapar(col.titulo) + '</h2>' +
         '<span class="contador kanban-contador">' + numero(itens.length) + '</span></header>' +
+        (col.totalFora ? '<p class="kanban-nota">+ ' + numero(col.totalFora) + ' com mais de ' + (d.diasFinalizados || 25) + ' dias (só no total)</p>' : '') +
         '<ul class="kanban-lista">' + (cartoes || '<li class="kanban-vazio">' + textoVazio + '</li>') + '</ul>' +
         (resto > 0 ? '<button type="button" class="btn btn-secundario kanban-mais" data-mais="' + escapar(col.id) + '">Mostrar mais (' + numero(resto) + ')</button>' : '') +
         '</section>';
@@ -246,7 +235,7 @@
     var espera;
     $('buscaShopee').addEventListener('input', function () { clearTimeout(espera); espera = setTimeout(aplicar, 150); });
     $('limparShopee').addEventListener('click', function () { $('buscaShopee').value = ''; filtros().forEach(FiltroMultiplo.limpar); aplicar(); });
-    $('atualizarShopee').addEventListener('click', function () { carregar(true); });
+    $('atualizarShopee').addEventListener('click', carregar);
     $('kanbanShopee').addEventListener('click', function (e) {
       var mais = e.target.closest('[data-mais]');
       if (mais) {
@@ -264,10 +253,9 @@
     document.addEventListener('keydown', function (e) { if (e.key === 'Escape') fecharDetalhes(); });
   });
 
-  // lê na primeira abertura da vista ou antes, em segundo plano, logo depois de o painel abrir (depois, pelo botão Atualizar)
-  document.addEventListener('vistamostrada', function (e) { if (e.detail === VISTA && !estado.carregado) carregar(); });
-  window.addEventListener('load', function () {
-    setTimeout(function () { if (!estado.carregado && window.google && google.script && google.script.run) carregar(); }, PRECARGA_MS);
+  // dados compartilhados (js/DadosPainel): cópia local na hora e conferência a cada 30 s
+  document.addEventListener('DOMContentLoaded', function () {
+    if (window.DadosPainel) DadosPainel.assinar(ouvir);
   });
 })();
 </script>

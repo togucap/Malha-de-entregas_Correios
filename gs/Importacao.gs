@@ -134,7 +134,7 @@ function importar_() {
   if (faltam > 0) aba.insertRowsAfter(aba.getMaxRows(), faltam);
   if (final.length) aba.getRange(cab + 1, 1, final.length, largura).setValues(final);
   if (totalAntes > final.length) aba.getRange(cab + 1 + final.length, 1, totalAntes - final.length, largura).clearContent();
-  invalidarDadosPainel_();
+  regerarPainelDadosSeguro_('importação de protocolos');
 
   // as linhas mudaram de posição: a atualização de status em andamento recomeça do início da planilha
   const props = PropertiesService.getScriptProperties();

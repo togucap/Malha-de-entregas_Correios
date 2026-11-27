@@ -104,7 +104,7 @@ function importarRetornoExtensao_() {
       aba.getRange(2, 1, linhas.length, cabecalho.length).setValues(linhas);
     }
     aba.setFrozenRows(1);
-    invalidarDadosPainel_();
+    regerarPainelDadosSeguro_('Retorno_Extensão');
 
     const fuso = aba.getParent().getSpreadsheetTimeZone();
     const agora = Utilities.formatDate(new Date(), fuso, 'dd/MM/yyyy HH:mm');

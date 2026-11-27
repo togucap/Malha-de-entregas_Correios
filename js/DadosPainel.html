@@ -1,0 +1,276 @@
+<script>
+/*
+ * Dados do painel no navegador (gs/PainelDados): uma cópia para todas as telas.
+ * - Ao abrir: mostra a cópia guardada neste navegador (localStorage) e confere com o servidor.
+ * - A cada 30 s, com a aba visível (e no botão Atualizar das telas): painelDadosSincronizar(versão, último nº)
+ *   -> nada / só as alterações do Registro_Alteracoes / JSON novo inteiro.
+ * - O JSON chega comprimido (gzip em base64) e é aberto com DecompressionStream; sem ele, o servidor manda o texto.
+ * - Alterações: "gravar" substitui a linha pela chave (Protocolo na base, Pedido_Shopee na Retorno_Extensão),
+ *   "remover" tira; linha nova entra no fim.
+ * Telas: DadosPainel.assinar(fn) -> fn(motivo) a cada mudança; telaAcompanhamento() e telaShopee() devolvem
+ * os dados já no formato de cada tela (as regras vêm do servidor em config).
+ */
+(function () {
+  var INTERVALO = 30000;
+  var LOCAL = 'malha-painel-dados';
+  var st = { versao: '', ultimoNum: 0, dados: null, base: null, retorno: null, b64: '', alteracoes: [],
+    conferidoEm: null, carregando: false, erro: '', pronto: false };
+  var ouvintes = [];
+
+  function temServidor() { return !!(window.google && google.script && google.script.run); }
+  function norm(v) { return String(v == null ? '' : v).normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim().toLowerCase(); }
+  function chave(v) { return String(v == null ? '' : v).trim().toUpperCase(); }
+  function avisar(motivo) { ouvintes.forEach(function (fn) { try { fn(motivo); } catch (e) { console.error(e); } }); }
+
+  /* ---------- Cópia em memória ---------- */
+
+  function indexar(conjunto) {
+    var mapa = new Map();
+    if (!conjunto) return mapa;
+    var i = conjunto.colunas.indexOf(conjunto.chave);
+    conjunto.linhas.forEach(function (l) { var k = chave(l[i]); if (k) mapa.set(k, l); });
+    return mapa;
+  }
+
+  function aplicar(alteracoes) {
+    (alteracoes || []).forEach(function (a) {
+      var num = a[0], mapa = a[1] === 'retorno' ? st.retorno : st.base;
+      if (num <= st.ultimoNum || !mapa) return;
+      if (a[2] === 'remover') mapa.delete(a[3]);
+      else { try { mapa.set(a[3], JSON.parse(a[4])); } catch (e) { /* registro ilegível: fica para o próximo JSON */ } }
+      st.ultimoNum = num;
+      st.alteracoes.push(a);
+    });
+  }
+
+  function abrirJson(texto, versao, ultimoNum, b64) {
+    st.dados = JSON.parse(texto);
+    st.base = indexar(st.dados.base);
+    st.retorno = indexar(st.dados.retorno);
+    st.versao = versao;
+    st.ultimoNum = ultimoNum;
+    st.alteracoes = [];
+    st.b64 = b64 || '';
+    st.pronto = true;
+  }
+
+  function descomprimir(b64) {
+    if (!window.DecompressionStream) return Promise.reject(new Error('sem DecompressionStream'));
+    var bin = atob(b64), bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).text();
+  }
+
+  function guardar() {
+    if (!st.b64) return;
+    try {
+      localStorage.setItem(LOCAL, JSON.stringify({ versao: st.versao, ultimoNumJson: st.ultimoNumJson, b64: st.b64, alteracoes: st.alteracoes }));
+    } catch (e) { /* sem espaço ou bloqueado: segue só em memória */ }
+  }
+
+  function carregarGuardado() {
+    var salvo;
+    try { salvo = JSON.parse(localStorage.getItem(LOCAL) || 'null'); } catch (e) { salvo = null; }
+    if (!salvo || !salvo.b64) return Promise.resolve(false);
+    return descomprimir(salvo.b64).then(function (texto) {
+      abrirJson(texto, salvo.versao, salvo.ultimoNumJson, salvo.b64);
+      st.ultimoNumJson = salvo.ultimoNumJson;
+      aplicar(salvo.alteracoes);
+      avisar('local');
+      return true;
+    }).catch(function () { return false; });
+  }
+
+  /* ---------- Conferência com o servidor ---------- */
+
+  function sincronizar() {
+    if (st.carregando || !temServidor()) {
+      if (!temServidor()) { st.erro = 'Abra o painel pelo Apps Script (menu Correios › Abrir painel ou App da Web).'; avisar('erro'); }
+      return;
+    }
+    st.carregando = true;
+    avisar('carregando');
+    google.script.run.withSuccessHandler(function (texto) {
+      var r;
+      try { r = JSON.parse(texto); } catch (e) { return falhar(e); }
+      receber(r).then(function (mudou) {
+        st.carregando = false;
+        st.erro = '';
+        st.conferidoEm = new Date();
+        avisar(mudou ? 'dados' : 'conferido');
+      }).catch(falhar);
+    }).withFailureHandler(falhar).painelDadosSincronizar(st.versao, st.ultimoNum);
+  }
+
+  function falhar(e) {
+    st.carregando = false;
+    st.erro = 'Não foi possível ler os dados do painel: ' + (e && e.message ? e.message : e);
+    avisar('erro');
+  }
+
+  // Promise<true se os dados mudaram>
+  function receber(r) {
+    if (r.tipo === 'nada') return Promise.resolve(false);
+    if (r.tipo === 'alteracoes') {
+      aplicar(r.alteracoes);
+      guardar();
+      return Promise.resolve(true);
+    }
+    // JSON novo
+    return descomprimir(r.dados).then(function (texto) {
+      abrirJson(texto, r.versao, r.meta.ultimoNum, r.dados);
+      st.ultimoNumJson = r.meta.ultimoNum;
+      aplicar(r.alteracoes);
+      guardar();
+      return true;
+    }).catch(function () {
+      // navegador sem DecompressionStream: pede o texto pronto ao servidor (sem cópia local)
+      return new Promise(function (ok, erro) {
+        google.script.run.withSuccessHandler(function (texto) {
+          abrirJson(texto, r.versao, r.meta.ultimoNum, '');
+          aplicar(r.alteracoes);
+          ok(true);
+        }).withFailureHandler(erro).painelDadosTexto();
+      });
+    });
+  }
+
+  /* ---------- Regras de status (vêm do servidor) ---------- */
+
+  function finalizado(status) {
+    var cfg = st.dados.config, t = norm(status);
+    if (t.indexOf(norm(cfg.marcaExpirado)) >= 0) return true;
+    if (!t || /^erro/.test(t) || t.indexOf('nao entregue') >= 0) return false;
+    return cfg.finais.some(function (f) { return t.indexOf(f) >= 0; });
+  }
+
+  // "dd/MM/aaaa[ HH:mm]" -> ms (0 sem data), para achar a ocorrência mais recente
+  function ms(texto) {
+    var m = String(texto || '').match(/^(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{2}):(\d{2}))?/);
+    return m ? new Date(+m[3], m[2] - 1, +m[1], +(m[4] || 0), +(m[5] || 0)).getTime() : 0;
+  }
+
+  /* ---------- Formato de cada tela ---------- */
+
+  // Mesmo formato de antes: { colunas, rotulos, linhas, finalizadas, faltando, atualizadoEm } + totais dos antigos
+  function telaAcompanhamento() {
+    var d = st.dados, cols = d.base.colunas, iStatus = cols.indexOf('Status tracking');
+    var linhas = Array.from(st.base.values());
+    return {
+      colunas: cols,
+      rotulos: cols.map(function (c) { return d.config.rotulos[c] || c; }),
+      linhas: linhas,
+      finalizadas: linhas.map(function (l) { return iStatus >= 0 && finalizado(l[iStatus]); }),
+      faltando: d.faltando.base,
+      atualizadoEm: d.geradoEm,
+      diasFinalizados: d.diasFinalizados,
+      finalizadosFora: d.totais.finalizadosFora,
+      finalizadosForaPorParceiro: d.totais.finalizadosForaPorParceiro
+    };
+  }
+
+  // Mesmo formato de antes: { colunas, cartoes, foraDoQuadro, faltando, abaRetorno, atualizadoEm }
+  function telaShopee() {
+    var d = st.dados, cfg = d.config;
+    var ib = {}; d.base.colunas.forEach(function (c, i) { ib[c] = i; });
+    var ir = {}; d.retorno.colunas.forEach(function (c, i) { ir[c] = i; });
+    var v = function (l, idx, nome) { var i = idx[nome]; return i == null ? '' : (l[i] == null ? '' : String(l[i])); };
+
+    var base = Array.from(st.base.values()).map(function (l) {
+      return {
+        protocolo: v(l, ib, 'Protocolo'), pedido: v(l, ib, 'Pedido'), autorizacao: v(l, ib, 'Autorização Postagem'),
+        convertido: v(l, ib, 'Código convertido'), status: v(l, ib, 'Status tracking'), dataOcorrencia: v(l, ib, 'Data Ocorrencia'),
+        cidade: v(l, ib, 'cidade ultima interação'), previsao: v(l, ib, 'Data Prevista Entrega'), parceiro: v(l, ib, 'Parceiro_Nome'),
+        entradaLista: v(l, ib, 'Entrada_Lista'), assistencia: v(l, ib, 'Assistencia_Tecnica'), pedidoParceiro: v(l, ib, 'Pedido_Parceiro')
+      };
+    });
+    var tracking = function (l) {
+      return l ? { status: l.status, dataOcorrencia: l.dataOcorrencia, cidade: l.cidade, previsao: l.previsao,
+        codigo: l.convertido || l.autorizacao, autorizacao: l.autorizacao, protocolo: l.protocolo, pedido: l.pedido } : null;
+    };
+
+    // linhas da base por Pedido_Parceiro e por Pedido: a de Data Ocorrencia mais recente (empate: a última)
+    var porParceiro = {}, porPedido = {};
+    base.forEach(function (l) {
+      l.ordem = ms(l.dataOcorrencia);
+      [[porParceiro, l.pedidoParceiro], [porPedido, l.pedido]].forEach(function (p) {
+        var k = chave(p[1]);
+        if (k && (!p[0][k] || l.ordem >= p[0][k].ordem)) p[0][k] = l;
+      });
+    });
+
+    var cartoes = [], foraDoQuadro = 0;
+    var origem = norm(cfg.pendente.origem), situacao = norm(cfg.pendente.situacao);
+    Array.from(st.retorno.values()).forEach(function (r) {
+      var l = { shopee: v(r, ir, 'Pedido_Shopee'), pedido: v(r, ir, 'Pedido'), situacao: v(r, ir, 'situacao'), prazo: v(r, ir, 'prazo'),
+        origem: v(r, ir, 'origem'), statusSolicitacao: v(r, ir, 'statusSolicitacao') };
+      if (!l.shopee) return;
+      if (norm(l.origem) !== origem || norm(l.situacao) !== situacao) { foraDoQuadro++; return; }
+      var b = porParceiro[chave(l.shopee)] || porPedido[chave(l.pedido)] || null;
+      cartoes.push({ coluna: 'pendente', tipo: 'retorno', titulo: l.shopee, pedido: l.pedido, prazo: l.prazo,
+        statusSolicitacao: l.statusSolicitacao, situacao: l.situacao, tracking: tracking(b) });
+    });
+
+    var parceiro = norm(cfg.parceiroShopee);
+    base.forEach(function (l) {
+      if (norm(l.parceiro) !== parceiro) return;
+      var coluna = !finalizado(l.status) ? 'transporte' : norm(l.entradaLista) === 'sim' ? 'finalizados' : 'entregue';
+      cartoes.push({ coluna: coluna, tipo: 'base', titulo: l.pedidoParceiro || l.pedido, pedido: l.pedido, status: l.status,
+        assistencia: l.assistencia || 'Não', entradaLista: l.entradaLista, protocolo: l.protocolo, autorizacao: l.autorizacao,
+        codigo: l.convertido || l.autorizacao, dataOcorrencia: l.dataOcorrencia, cidade: l.cidade, previsao: l.previsao });
+    });
+
+    // finalizados antigos da Shopee (fora do JSON) entram só no total da coluna Finalizados
+    var foraShopee = 0;
+    Object.keys(d.totais.finalizadosForaPorParceiro || {}).forEach(function (p) {
+      if (norm(p) === parceiro) foraShopee += d.totais.finalizadosForaPorParceiro[p];
+    });
+
+    return {
+      colunas: cfg.kanban.map(function (c) {
+        return { id: c.id, titulo: c.titulo, definida: c.definida, totalFora: c.id === 'finalizados' ? foraShopee : 0 };
+      }),
+      cartoes: cartoes,
+      foraDoQuadro: foraDoQuadro,
+      faltando: d.faltando.base.map(function (c) { return 'Base_Dados: ' + c; })
+        .concat(d.faltando.retorno.map(function (c) { return 'Retorno_Extensão: ' + c; })),
+      abaRetorno: d.retorno.existe,
+      atualizadoEm: d.geradoEm,
+      diasFinalizados: d.diasFinalizados
+    };
+  }
+
+  /* ---------- Ciclo ---------- */
+
+  function horaConferida() {
+    var c = st.conferidoEm;
+    return c ? ('0' + c.getHours()).slice(-2) + ':' + ('0' + c.getMinutes()).slice(-2) + ':' + ('0' + c.getSeconds()).slice(-2) : '';
+  }
+
+  window.DadosPainel = {
+    assinar: function (fn) { ouvintes.push(fn); if (st.pronto) fn('local'); },
+    atualizar: sincronizar,
+    pronto: function () { return st.pronto; },
+    estado: function () {
+      return { pronto: st.pronto, carregando: st.carregando, erro: st.erro, geradoEm: st.dados ? st.dados.geradoEm : '',
+        conferidoEm: horaConferida(), pendentes: st.alteracoes.length };
+    },
+    // "Dados de 27/11/2026 14:05 · conferido às 14:07:31"
+    textoAtualizacao: function () {
+      if (!st.dados) return '';
+      return 'Dados de ' + st.dados.geradoEm + (st.alteracoes.length ? ' + ' + st.alteracoes.length + ' alteração(ões)' : '') +
+        (st.conferidoEm ? ' · conferido às ' + horaConferida() : '');
+    },
+    finalizado: function (s) { return st.dados ? finalizado(s) : false; },
+    telaAcompanhamento: telaAcompanhamento,
+    telaShopee: telaShopee
+  };
+
+  // começa logo ao abrir o painel (qualquer vista): cópia local na hora + conferência; depois a cada 30 s
+  window.addEventListener('load', function () {
+    carregarGuardado().then(sincronizar);
+    setInterval(function () { if (!document.hidden) sincronizar(); }, INTERVALO);
+  });
+  document.addEventListener('visibilitychange', function () { if (!document.hidden && st.pronto) sincronizar(); });
+})();
+</script>
