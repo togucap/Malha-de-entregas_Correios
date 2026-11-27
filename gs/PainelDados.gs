@@ -20,7 +20,9 @@
  * Assistencia_Tecnica como Sim/Não), menos os finalizados com Data Ocorrencia de mais de 25 dias (contados em
  * totais), exceto Shopee ainda sem "Sim" na Entrada_Lista (pendência do operacional); e a aba Retorno_Extensão.
  * As regras de tela (status finais, colunas do quadro Shopee...) vão em config; a tela aplica.
- * Todas as funções que gravam esperam a trava do script (LockService) já obtida por quem chama.
+ * Travas: quem regera ou grava a base segura a trava do script (minutos); gravar no registro e nas abas
+ * das ações manuais usa a trava curta do documento (comTravaRegistro_), para o painel funcionar durante
+ * a atualização.
  */
 
 const PAINEL_DADOS = {
@@ -154,7 +156,12 @@ function regerarPainelDados_(motivo) {
   aba.getRange(1, 1, bloco.length, 1).setValues(bloco);
   if (aba.getLastRow() > bloco.length) aba.getRange(bloco.length + 1, 1, aba.getLastRow() - bloco.length, 1).clearContent();
 
-  limparRegistroPainel_(seq);
+  // tira do registro o que já entrou (falhar aqui não atrapalha: o navegador só aplica nº acima do JSON)
+  try {
+    comTravaRegistro_(20000, function () { limparRegistroPainel_(seq); });
+  } catch (e) {
+    console.warn('Registro_Alteracoes não limpo: ' + mensagemErro_(e));
+  }
   guardarJsonNoCache_(meta, pedacos);
   props.setProperties({ [PAINEL_DADOS.VERSAO_PROP]: meta.versao, [PAINEL_DADOS.INCLUIDO_PROP]: String(seq) });
   props.deleteProperty(PAINEL_DADOS.PENDENTE_PROP);
@@ -348,7 +355,7 @@ function registrarLinhasRetorno_(aba, primeira, qtd, origem) {
 // Para o tracking: falha no registro nunca interrompe o lote (fica pendente para a manutenção)
 function registrarLinhasBaseSeguro_(aba, primeira, qtd, origem) {
   try {
-    registrarLinhasBase_(aba, primeira, qtd, origem, false);
+    comTravaRegistro_(10000, function () { registrarLinhasBase_(aba, primeira, qtd, origem, false); });
   } catch (e) {
     console.warn('Registro_Alteracoes não gravado: ' + mensagemErro_(e));
     marcarPainelPendente_();
@@ -397,6 +404,23 @@ function limparRegistroPainel_(ate) {
   if (ficam.length) aba.getRange(2, 1, ficam.length, largura).setValues(ficam);
 }
 
+/**
+ * Trava curta do registro de alterações e das ações do painel (LockService do documento), separada da
+ * trava do script, que o tracking/cruzamentos/importação seguram por minutos. Assim uma ação no painel
+ * (ex.: forçar finalizado) funciona durante a atualização: as duas só disputam o instante de gravar no
+ * registro. Quem segura a trava do script também pode pegar esta (ordem fixa: script -> documento).
+ */
+const MSG_REGISTRO_OCUPADO = 'Outra alteração está sendo salva agora. Tente de novo em instantes.';
+function comTravaRegistro_(esperaMs, fn) {
+  const lock = LockService.getDocumentLock() || LockService.getScriptLock(); // documento: script ligado à planilha
+  if (!lock.tryLock(esperaMs)) throw new Error(MSG_REGISTRO_OCUPADO);
+  try {
+    return fn();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 function marcarPainelPendente_() {
   try { PropertiesService.getScriptProperties().setProperty(PAINEL_DADOS.PENDENTE_PROP, String(Date.now())); } catch (e) { /* sem saída */ }
 }
@@ -423,14 +447,11 @@ function onEdit(e) {
     if (qtd <= 0) return;
     if (qtd > PAINEL_DADOS.MAX_LINHAS_EDICAO) { marcarPainelPendente_(); return; }
 
-    const lock = LockService.getScriptLock();
-    if (!lock.tryLock(3000)) { marcarPainelPendente_(); return; }
-    try {
+    // trava curta do registro (não a do script): edição durante o tracking também é registrada
+    comTravaRegistro_(3000, function () {
       if (ehBase) registrarLinhasBase_(aba, primeira, qtd, 'edicao', true);
       else registrarLinhasRetorno_(aba, primeira, qtd, 'edicao');
-    } finally {
-      lock.releaseLock();
-    }
+    });
   } catch (erro) {
     marcarPainelPendente_(); // gatilho simples: nunca interrompe a edição
   }

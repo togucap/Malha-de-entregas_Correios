@@ -10,6 +10,8 @@
  *   - sai do tracking (atualizar_ pula; também no "Reprocessar todas");
  *   - conta como finalizado nas telas (Shopee: coluna Finalizados; Acompanhamento - OUT: visão "Finalizado"),
  *     com a marca "Finalizado manualmente"; o corte de 25 dias do painel conta da data da ação.
+ * Trava: só a curta do registro (comTravaRegistro_), então funciona com a atualização de status rodando;
+ * o tracking lê o Estado_Manual no início de cada execução (forçado no meio vale da execução seguinte).
  * Quem fez: e-mail da conta Google de quem usa o painel (Session.getActiveUser). Ele só vem quando o painel
  * roda com a conta de quem acessa (menu Correios › Abrir painel, ou App da Web implantado como "Usuário que
  * acessa o app da Web"); senão fica "(não identificado)".
@@ -36,9 +38,8 @@ function painelAcaoManual(protocolo, acao) {
   if (!ESTADO_MANUAL.ACOES[acao]) throw new Error('Ação desconhecida: ' + acao);
   const usuario = usuarioAtual_();
 
-  const lock = LockService.getScriptLock();
-  if (!lock.tryLock(15000)) throw new Error(MSG_OCUPADO);
-  try {
+  // trava curta do registro (não a do script): funciona durante o tracking, os cruzamentos e a importação
+  return comTravaRegistro_(15000, function () {
     const aba = obterAba_();
     const fuso = aba.getParent().getSpreadsheetTimeZone();
     const linha = localizarProtocoloBase_(aba, chave, fuso);
@@ -65,9 +66,7 @@ function painelAcaoManual(protocolo, acao) {
     registrarEvento_(chave, linha.pedido, ESTADO_MANUAL.ACOES.desfazer, usuario, 'painel');
     registrarAlteracoes_([['manual', 'remover', chave, null]], 'painel');
     return JSON.stringify({ ok: true, msg: 'Finalização manual desfeita: o protocolo ' + chave + ' volta para o tracking.', manual: null });
-  } finally {
-    lock.releaseLock();
-  }
+  });
 }
 
 /**
