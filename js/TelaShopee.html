@@ -9,6 +9,8 @@
  *   que passam na pesquisa, com contagem. Mudança chama aplicarFiltrosShopee.
  * - Dados: cópia no navegador conferida a cada 30 s (js/DadosPainel); toda mudança redesenha mantendo pesquisa,
  *   filtros e "Mostrar mais"; "Atualizar" confere na hora. Finalizados com mais de 25 dias só no total da coluna.
+ * - Cartão pendente: chip "Contestação: …" quando a Retorno_Extensão tem contestacao; a janela tem o link
+ *   "Abrir na Shopee" (portal do vendedor, nova aba; só links https://seller.shopee.com.br/).
  * - Clique no cartão: janela com os dados de tracking (Data Ocorrencia, cidade, Data Prevista Entrega) e o
  *   botão "Consultar tracking em tempo real", que abre a janela de histórico (js/HistoricoTracking).
  * - Pesquisa no navegador (sem acento/maiúsculas, parte do texto) no título e no Pedido; 50 cartões por coluna.
@@ -163,6 +165,7 @@
       var extras = [];
       if (c.statusSolicitacao) extras.push('<span class="chip chip-neutro" title="' + escapar(c.statusSolicitacao) + '">' + escapar(c.statusSolicitacao) + '</span>');
       if (c.prazo) extras.push('<span class="kanban-prazo">' + RELOGIO + escapar(c.prazo) + '</span>');
+      if (c.contestacao) extras.push(chipContestacao(c.contestacao));
       if (extras.length) partes.push('<div class="kanban-linha">' + extras.join('') + '</div>');
     } else {
       partes.push('<div class="kanban-linha"><span class="chip ' + corStatus(c.status) + '" title="' + escapar(c.status) + '">' + escapar(c.status || 'Sem status') + '</span></div>');
@@ -178,6 +181,17 @@
     var rotulo = (c.tipo === 'retorno' ? 'Pedido Shopee ' : 'Pedido do parceiro ') + c.titulo + ': ver detalhes';
     return '<li><button type="button" class="kanban-cartao" data-cartao="' + k + '" aria-label="' + escapar(rotulo) + '">' +
       '<span class="kanban-codigo">' + escapar(c.titulo) + '</span>' + partes.join('') + '</button></li>';
+  }
+
+  // contestação da devolução: "Prazo final" em laranja (pede ação), demais em azul (informação)
+  function chipContestacao(v) {
+    var classe = normalizar(v).indexOf('final') >= 0 ? 'chip-marca' : 'chip-info';
+    return '<span class="chip ' + classe + '" title="Contestação: ' + escapar(v) + '">Contestação: ' + escapar(v) + '</span>';
+  }
+
+  // só o portal do vendedor da Shopee (o link vem do JSON da extensão)
+  function linkShopee(url) {
+    return /^https:\/\/seller\.shopee\.com\.br\//.test(String(url || '')) ? String(url) : '';
   }
 
   /* ---------- Janela de detalhes ---------- */
@@ -197,7 +211,8 @@
     $('shopeeChips').innerHTML = status ? '<span class="chip ' + corStatus(status) + '">' + escapar(status) + '</span>' : '';
 
     $('shopeeDados').innerHTML = c.tipo === 'retorno'
-      ? dado('Pedido', c.pedido, true) + dado('Prazo', c.prazo) + dado('Status da solicitação', c.statusSolicitacao) + dado('Situação', c.situacao)
+      ? dado('Pedido', c.pedido, true) + dado('Prazo', c.prazo) + dado('Status da solicitação', c.statusSolicitacao) + dado('Situação', c.situacao) +
+        dado('Contestação', c.contestacao)
       : dado('Pedido', c.pedido, true) + dado('Protocolo', c.protocolo, true) + dado('Autorização Postagem', c.autorizacao, true) +
         dado('Assistência técnica', c.assistencia) + dado('Entrada na lista', c.entradaLista);
 
@@ -211,6 +226,9 @@
     $('shopeeNota').hidden = !nota;
     $('shopeeTracking').hidden = !t;
     $('shopeeConsultar').disabled = !(t && t.codigo);
+    var link = c.tipo === 'retorno' ? linkShopee(c.link) : '';
+    $('shopeeLink').hidden = !link;
+    $('shopeeLink').href = link || '#';
     mostrarManual(c);
 
     $('shopeeFundo').hidden = false;
