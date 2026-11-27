@@ -4,7 +4,7 @@
  *   Painel_JSON (aba oculta)          A1 = meta { versao, geradoEm, ultimoNum, pedacos, tamanho, ... };
  *                                     A2… = o JSON das telas, comprimido (gzip) em base64, em pedaços
  *                                     ("P" + até 45 mil caracteres; o "P" evita que o Sheets leia "=…" como fórmula).
- *   Registro_Alteracoes (aba oculta)  uma linha por alteração depois do JSON: nº, quando, conjunto (base|retorno),
+ *   Registro_Alteracoes (aba oculta)  uma linha por alteração depois do JSON: nº, quando, conjunto (base|retorno|manual),
  *                                     ação (gravar|remover), chave (Protocolo / Pedido_Shopee), dados (registro
  *                                     completo da linha, em JSON), origem (tracking|edicao).
  *
@@ -174,17 +174,35 @@ function montarJsonPainel_() {
   const linhas = [];
   const foraPorParceiro = {};
   let fora = 0;
+  // duplicidade: mesmo Pedido em outro protocolo já resolvido (entregue com "Sim" na Entrada_Lista, ou finalizado manualmente)
+  const resolvidoPorPedido = {};
+  const candidatos = [];
   if (ctx.total) {
     aba.getRange(2, 1, ctx.total, ctx.largura).getValues().forEach(function (r) {
       const s = situacaoNoPainel_(r, ctx, limite);
-      if (s === 'incluir') linhas.push(registroBasePainel_(r, ctx, fuso));
-      else if (s === 'antigo') {
+      const chave = ctx.iChave < 0 ? '' : chavePainel_(r[ctx.iChave], fuso);
+      const pedido = ctx.iPedido < 0 ? '' : chavePainel_(r[ctx.iPedido], fuso);
+      const resolvido = !!(chave && ctx.manual[chave]) ||
+        (ctx.iStatus >= 0 && ctx.iLista >= 0 && normalizarTexto_(r[ctx.iLista]) === 'sim' && statusFinalizado_(r[ctx.iStatus]));
+      if (resolvido && chave && pedido && !resolvidoPorPedido[pedido]) resolvidoPorPedido[pedido] = chave;
+      if (s === 'incluir') {
+        linhas.push(registroBasePainel_(r, ctx, fuso));
+        if (!resolvido && chave && pedido) candidatos.push([chave, pedido]);
+      } else if (s === 'antigo') {
         fora++;
         const p = String(r[ctx.iParceiro]).trim();
         foraPorParceiro[p] = (foraPorParceiro[p] || 0) + 1;
       }
     });
   }
+
+  const duplicidades = {};
+  candidatos.forEach(function (c) {
+    const outro = resolvidoPorPedido[c[1]];
+    if (outro && outro !== c[0]) duplicidades[c[0]] = outro;
+  });
+  const manual = {};
+  Object.keys(ctx.manual).forEach(function (k) { manual[k] = publicoManual_(ctx.manual[k]); });
 
   const abaRet = obterAbaRetornoExtensao_(true);
   const ret = abaRet ? contextoRetornoPainel_(abaRet) : null;
@@ -209,6 +227,8 @@ function montarJsonPainel_() {
     },
     base: { colunas: COLUNAS_ACOMPANHAMENTO_OUT, chave: 'Protocolo', linhas: linhas },
     retorno: { existe: !!abaRet, colunas: PAINEL_DADOS.COLUNAS_RETORNO, chave: 'Pedido_Shopee', linhas: linhasRet },
+    manual: manual,             // { PROTOCOLO: { situacao, por, em } } (gs/EstadoManual)
+    duplicidades: duplicidades, // { PROTOCOLO: outro protocolo do mesmo Pedido já resolvido }
     totais: { finalizadosFora: fora, finalizadosForaPorParceiro: foraPorParceiro },
     faltando: {
       base: COLUNAS_ACOMPANHAMENTO_OUT.filter(function (_, k) { return ctx.pos[k] < 0; }),
@@ -230,7 +250,10 @@ function contextoBasePainel_(aba) {
     pos: nomes.map(indice),
     simNao: nomes.map(function (n) { return SIM_NAO_ACOMPANHAMENTO_OUT.indexOf(n) >= 0; }),
     soData: nomes.map(function (n) { return SO_DATA_ACOMPANHAMENTO_OUT.indexOf(n) >= 0; }),
+    fuso: aba.getParent().getSpreadsheetTimeZone(),
+    manual: lerEstadoManual_().mapa, // finalizados manualmente (gs/EstadoManual)
     iChave: indice('Protocolo'),
+    iPedido: indice('Pedido'),
     iParceiro: indice(FILTRO_ACOMPANHAMENTO_OUT),
     iStatus: indice('Status tracking'),
     iData: indice('Data Ocorrencia'),
@@ -254,6 +277,9 @@ function situacaoNoPainel_(r, ctx, limite) {
   if (ctx.iParceiro < 0) return 'fora';
   const parceiro = String(r[ctx.iParceiro] == null ? '' : r[ctx.iParceiro]).trim();
   if (!parceiro) return 'fora';
+  // finalizado manualmente: conta como finalizado; o corte de 25 dias vale a partir da data da ação
+  const manual = ctx.iChave < 0 ? null : ctx.manual[chavePainel_(r[ctx.iChave], ctx.fuso)];
+  if (manual) return manual.emMs && manual.emMs < limite ? 'antigo' : 'incluir';
   if (ctx.iStatus < 0 || !statusFinalizado_(r[ctx.iStatus])) return 'incluir';
   if (ctx.semCorte.indexOf(normalizarTexto_(parceiro)) >= 0 && (ctx.iLista < 0 || normalizarTexto_(r[ctx.iLista]) !== 'sim')) return 'incluir';
   const data = ctx.iData < 0 ? null : dataDoPainel_(r[ctx.iData]);
@@ -291,10 +317,10 @@ function dataDoPainel_(v) {
  * parceiro / finalizado antigo) vira "remover" (edição manual); no tracking só entram as linhas do painel.
  */
 function registrarLinhasBase_(aba, primeira, qtd, origem, comRemocao) {
-  if (qtd <= 0) return 0;
+  if (qtd <= 0) return [];
   const fuso = aba.getParent().getSpreadsheetTimeZone();
   const ctx = contextoBasePainel_(aba);
-  if (ctx.iChave < 0) return 0;
+  if (ctx.iChave < 0) return [];
   const limite = Date.now() - PAINEL_DADOS.DIAS_FINALIZADOS * 864e5;
   const entradas = [];
   aba.getRange(primeira, 1, qtd, ctx.largura).getValues().forEach(function (r) {
@@ -307,10 +333,10 @@ function registrarLinhasBase_(aba, primeira, qtd, origem, comRemocao) {
 }
 
 function registrarLinhasRetorno_(aba, primeira, qtd, origem) {
-  if (qtd <= 0) return 0;
+  if (qtd <= 0) return [];
   const fuso = aba.getParent().getSpreadsheetTimeZone();
   const ctx = contextoRetornoPainel_(aba);
-  if (ctx.pos[0] < 0) return 0;
+  if (ctx.pos[0] < 0) return [];
   const entradas = [];
   aba.getRange(primeira, 1, qtd, ctx.largura).getValues().forEach(function (r) {
     const chave = chavePainel_(r[ctx.pos[0]], fuso);
@@ -329,9 +355,12 @@ function registrarLinhasBaseSeguro_(aba, primeira, qtd, origem) {
   }
 }
 
-/** entradas: [[conjunto, ação, chave, registro|null], …]. Grava as linhas e só depois avança o nº. */
+/**
+ * entradas: [[conjunto (base|retorno|manual), ação, chave, registro|null], …]. Grava as linhas e só depois
+ * avança o nº. Devolve as entradas gravadas ([nº, conjunto, ação, chave, dados]).
+ */
 function registrarAlteracoes_(entradas, origem) {
-  if (!entradas.length) return 0;
+  if (!entradas.length) return [];
   const props = PropertiesService.getScriptProperties();
   let seq = Number(props.getProperty(PAINEL_DADOS.SEQ_PROP) || 0);
   const agora = new Date();
@@ -343,7 +372,7 @@ function registrarAlteracoes_(entradas, origem) {
   garantirLinhas_(aba, inicio + linhas.length - 1);
   aba.getRange(inicio, 1, linhas.length, linhas[0].length).setValues(linhas);
   props.setProperty(PAINEL_DADOS.SEQ_PROP, String(seq));
-  return linhas.length;
+  return linhas.map(function (l) { return [l[0], l[2], l[3], l[4], l[5]]; }); // formato de lerAlteracoesPainel_
 }
 
 // [[nº, conjunto, ação, chave, dados], …] com nº > desde, em ordem

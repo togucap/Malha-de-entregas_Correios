@@ -6,7 +6,9 @@
  *
  * - Visão "Em aberto" (padrão) = status ainda consultado pelas APIs; "Finalizado" = status final
  *   (mesma regra da atualização, enviada pelo servidor). Finalizados com mais de 25 dias não vêm no JSON:
- *   entram só no total mostrado no resumo da visão "Finalizado".
+ *   entram só no total mostrado no resumo da visão "Finalizado". Finalizado manualmente no quadro Shopee
+ *   (js/DadosPainel, gs/EstadoManual) conta como finalizado e ganha a marca "Finalizado manualmente" no status;
+ *   "Possível duplicidade" marca protocolo cujo pedido já foi resolvido em outro protocolo.
  * - Pesquisa: com termo, mostra os resultados das duas visões (em aberto e finalizados) juntos;
  *   cada botão da visão mostra quantos resultados tem com a pesquisa e os filtros atuais.
  * - Filtros: js/FiltroMultiplo (seleção múltipla; nenhum marcado = todos). As opções de cada filtro
@@ -74,7 +76,8 @@
     estado.rotulos = d.rotulos || d.colunas; // títulos do cabeçalho
     var busca = BUSCA.map(indice);
     estado.linhas = d.linhas.map(function (v, k) {
-      return { v: v, finalizada: !!(d.finalizadas && d.finalizadas[k]), busca: normalizar(busca.map(function (i) { return v[i]; }).join(' ')) };
+      return { v: v, finalizada: !!(d.finalizadas && d.finalizadas[k]),
+        manual: d.manuais ? d.manuais[k] : null, duplicidade: d.duplicidades ? d.duplicidades[k] : '', busca: normalizar(busca.map(function (i) { return v[i]; }).join(' ')) };
     });
     estado.pesquisando = !!termoBusca();
     estado.faltandoTexto = d.faltando && d.faltando.length
@@ -202,9 +205,13 @@
       contexto: contexto, origem: botao });
   }
 
-  function celula(coluna, valor) {
+  function celula(coluna, valor, l) {
     if (coluna === 'Status tracking') {
-      return '<td>' + (valor ? '<span class="chip ' + window.classeStatus(valor) + '">' + escapar(valor) + '</span>' : '') + '</td>';
+      // marcas do quadro Shopee (violeta = fora do padrão): finalizado à mão no painel e possível duplicidade
+      var marcas = '';
+      if (l && l.manual) marcas += ' <span class="chip chip-divergencia" title="' + escapar('Por ' + l.manual.por + ' em ' + l.manual.em + ' · fora do tracking') + '">Finalizado manualmente</span>';
+      if (l && l.duplicidade) marcas += ' <span class="chip chip-divergencia" title="' + escapar('O protocolo ' + l.duplicidade + ' do mesmo pedido já foi resolvido') + '">Possível duplicidade</span>';
+      return '<td class="celula-status">' + (valor ? '<span class="chip ' + window.classeStatus(valor) + '">' + escapar(valor) + '</span>' : '') + marcas + '</td>';
     }
     if (SIM_NAO.indexOf(coluna) >= 0 && valor) {
       return '<td><span class="chip ' + (normalizar(valor) === 'sim' ? 'chip-sucesso' : 'chip-neutro') + '">' + escapar(valor) + '</span></td>';
@@ -217,7 +224,7 @@
     var naOutraVisao = estado.naOutraVisao; // resultados da pesquisa/filtros na visão que não está aberta
     var visiveis = estado.filtradas.slice(0, estado.limite);
     $('tabelaOut').tBodies[0].innerHTML = visiveis.map(function (l, k) {
-      return '<tr>' + estado.colunas.map(function (c, i) { return celula(c, l.v[i]); }).join('') + botaoHistorico(l, k) + '</tr>';
+      return '<tr>' + estado.colunas.map(function (c, i) { return celula(c, l.v[i], l); }).join('') + botaoHistorico(l, k) + '</tr>';
     }).join('');
 
     var achadas = estado.filtradas.length;

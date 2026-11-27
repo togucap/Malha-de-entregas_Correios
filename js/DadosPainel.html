@@ -7,13 +7,15 @@
  * - O JSON chega comprimido (gzip em base64) e é aberto com DecompressionStream; sem ele, o servidor manda o texto.
  * - Alterações: "gravar" substitui a linha pela chave (Protocolo na base, Pedido_Shopee na Retorno_Extensão),
  *   "remover" tira; linha nova entra no fim.
+ * - Situação manual (gs/EstadoManual): mapa Protocolo -> { situacao, por, em }, atualizado pelo registro
+ *   (conjunto "manual"); finalizado manualmente conta como finalizado. Duplicidades vêm prontas do servidor.
  * Telas: DadosPainel.assinar(fn) -> fn(motivo) a cada mudança; telaAcompanhamento() e telaShopee() devolvem
- * os dados já no formato de cada tela (as regras vêm do servidor em config).
+ * os dados já no formato de cada tela (as regras vêm do servidor em config); acaoManual(protocolo, acao).
  */
 (function () {
   var INTERVALO = 30000;
   var LOCAL = 'malha-painel-dados';
-  var st = { versao: '', ultimoNum: 0, dados: null, base: null, retorno: null, b64: '', alteracoes: [],
+  var st = { versao: '', ultimoNum: 0, dados: null, base: null, retorno: null, manual: null, b64: '', alteracoes: [], repetir: false,
     conferidoEm: null, carregando: false, erro: '', pronto: false };
   var ouvintes = [];
 
@@ -34,7 +36,7 @@
 
   function aplicar(alteracoes) {
     (alteracoes || []).forEach(function (a) {
-      var num = a[0], mapa = a[1] === 'retorno' ? st.retorno : st.base;
+      var num = a[0], mapa = a[1] === 'retorno' ? st.retorno : a[1] === 'manual' ? st.manual : st.base;
       if (num <= st.ultimoNum || !mapa) return;
       if (a[2] === 'remover') mapa.delete(a[3]);
       else { try { mapa.set(a[3], JSON.parse(a[4])); } catch (e) { /* registro ilegível: fica para o próximo JSON */ } }
@@ -47,6 +49,7 @@
     st.dados = JSON.parse(texto);
     st.base = indexar(st.dados.base);
     st.retorno = indexar(st.dados.retorno);
+    st.manual = new Map(Object.keys(st.dados.manual || {}).map(function (k) { return [k, st.dados.manual[k]]; }));
     st.versao = versao;
     st.ultimoNum = ultimoNum;
     st.alteracoes = [];
@@ -84,7 +87,8 @@
   /* ---------- Conferência com o servidor ---------- */
 
   function sincronizar() {
-    if (st.carregando || !temServidor()) {
+    if (st.carregando) { st.repetir = true; return; } // confere de novo ao terminar a conferência em curso
+    if (!temServidor()) {
       if (!temServidor()) { st.erro = 'Abra o painel pelo Apps Script (menu Correios › Abrir painel ou App da Web).'; avisar('erro'); }
       return;
     }
@@ -98,12 +102,14 @@
         st.erro = '';
         st.conferidoEm = new Date();
         avisar(mudou ? 'dados' : 'conferido');
+        if (st.repetir) { st.repetir = false; sincronizar(); }
       }).catch(falhar);
     }).withFailureHandler(falhar).painelDadosSincronizar(st.versao, st.ultimoNum);
   }
 
   function falhar(e) {
     st.carregando = false;
+    st.repetir = false;
     st.erro = 'Não foi possível ler os dados do painel: ' + (e && e.message ? e.message : e);
     avisar('erro');
   }
@@ -144,6 +150,14 @@
     return cfg.finais.some(function (f) { return t.indexOf(f) >= 0; });
   }
 
+  // finalizado manualmente vale como finalizado, seja qual for o status
+  function manualDe(protocolo) { return st.manual ? st.manual.get(chave(protocolo)) || null : null; }
+  function duplicidadeDe(protocolo) {
+    if (manualDe(protocolo)) return '';
+    var d = st.dados.duplicidades || {};
+    return d[chave(protocolo)] || '';
+  }
+
   // "dd/MM/aaaa[ HH:mm]" -> ms (0 sem data), para achar a ocorrência mais recente
   function ms(texto) {
     var m = String(texto || '').match(/^(\d{2})\/(\d{2})\/(\d{4})(?:\s+(\d{2}):(\d{2}))?/);
@@ -154,13 +168,16 @@
 
   // Mesmo formato de antes: { colunas, rotulos, linhas, finalizadas, faltando, atualizadoEm } + totais dos antigos
   function telaAcompanhamento() {
-    var d = st.dados, cols = d.base.colunas, iStatus = cols.indexOf('Status tracking');
+    var d = st.dados, cols = d.base.colunas, iStatus = cols.indexOf('Status tracking'), iProt = cols.indexOf('Protocolo');
     var linhas = Array.from(st.base.values());
+    var manuais = linhas.map(function (l) { return iProt >= 0 ? manualDe(l[iProt]) : null; });
     return {
       colunas: cols,
       rotulos: cols.map(function (c) { return d.config.rotulos[c] || c; }),
       linhas: linhas,
-      finalizadas: linhas.map(function (l) { return iStatus >= 0 && finalizado(l[iStatus]); }),
+      finalizadas: linhas.map(function (l, k) { return !!manuais[k] || (iStatus >= 0 && finalizado(l[iStatus])); }),
+      manuais: manuais,
+      duplicidades: linhas.map(function (l) { return iProt >= 0 ? duplicidadeDe(l[iProt]) : ''; }),
       faltando: d.faltando.base,
       atualizadoEm: d.geradoEm,
       diasFinalizados: d.diasFinalizados,
@@ -214,8 +231,10 @@
     var parceiro = norm(cfg.parceiroShopee);
     base.forEach(function (l) {
       if (norm(l.parceiro) !== parceiro) return;
-      var coluna = !finalizado(l.status) ? 'transporte' : norm(l.entradaLista) === 'sim' ? 'finalizados' : 'entregue';
+      var manual = manualDe(l.protocolo);
+      var coluna = manual ? 'finalizados' : !finalizado(l.status) ? 'transporte' : norm(l.entradaLista) === 'sim' ? 'finalizados' : 'entregue';
       cartoes.push({ coluna: coluna, tipo: 'base', titulo: l.pedidoParceiro || l.pedido, pedido: l.pedido, status: l.status,
+        manual: manual, duplicidade: duplicidadeDe(l.protocolo),
         assistencia: l.assistencia || 'Não', entradaLista: l.entradaLista, protocolo: l.protocolo, autorizacao: l.autorizacao,
         codigo: l.convertido || l.autorizacao, dataOcorrencia: l.dataOcorrencia, cidade: l.cidade, previsao: l.previsao });
     });
@@ -262,6 +281,23 @@
         (st.conferidoEm ? ' · conferido às ' + horaConferida() : '');
     },
     finalizado: function (s) { return st.dados ? finalizado(s) : false; },
+    // acao = 'finalizar' | 'desfazer'. Promise<mensagem>. Mostra na hora para quem fez e confere com o servidor
+    // (as alterações de outras pessoas e a desta ação chegam pelo registro, na ordem).
+    acaoManual: function (protocolo, acao) {
+      return new Promise(function (ok, erro) {
+        if (!temServidor()) { erro(new Error('Abra o painel pelo Apps Script.')); return; }
+        google.script.run.withSuccessHandler(function (texto) {
+          var r;
+          try { r = JSON.parse(texto); } catch (e) { erro(e); return; }
+          if (st.manual) {
+            if (r.manual) st.manual.set(chave(protocolo), r.manual); else st.manual.delete(chave(protocolo));
+          }
+          avisar('dados');
+          sincronizar();
+          ok(r.msg);
+        }).withFailureHandler(erro).painelAcaoManual(protocolo, acao);
+      });
+    },
     telaAcompanhamento: telaAcompanhamento,
     telaShopee: telaShopee
   };

@@ -169,6 +169,11 @@
       partes.push('<div class="kanban-linha kanban-indicadores">' +
         '<span>Assist. técnica <span class="chip ' + chipSimNao(c.assistencia) + '">' + escapar(c.assistencia) + '</span></span>' +
         '<span>Entrada lista <span class="chip ' + chipSimNao(c.entradaLista) + '">' + escapar(c.entradaLista || '—') + '</span></span></div>');
+      // marcas fora do padrão (violeta): finalizado à mão e possível duplicidade de protocolo
+      var marcas = [];
+      if (c.manual) marcas.push('<span class="chip chip-divergencia" title="' + escapar('Por ' + c.manual.por + ' em ' + c.manual.em) + '">Finalizado manualmente</span>');
+      if (c.duplicidade) marcas.push('<span class="chip chip-divergencia" title="' + escapar('O protocolo ' + c.duplicidade + ' do mesmo pedido já foi resolvido') + '">Possível duplicidade</span>');
+      if (marcas.length) partes.push('<div class="kanban-linha">' + marcas.join('') + '</div>');
     }
     var rotulo = (c.tipo === 'retorno' ? 'Pedido Shopee ' : 'Pedido do parceiro ') + c.titulo + ': ver detalhes';
     return '<li><button type="button" class="kanban-cartao" data-cartao="' + k + '" aria-label="' + escapar(rotulo) + '">' +
@@ -206,10 +211,49 @@
     $('shopeeNota').hidden = !nota;
     $('shopeeTracking').hidden = !t;
     $('shopeeConsultar').disabled = !(t && t.codigo);
+    mostrarManual(c);
 
     $('shopeeFundo').hidden = false;
     document.body.style.overflow = 'hidden';
     document.querySelector('[data-fechar-shopee]').focus();
+  }
+
+  // situação manual do cartão da base: quem finalizou, aviso de duplicidade e o botão forçar/desfazer
+  function mostrarManual(c) {
+    var base = c.tipo === 'base';
+    $('shopeeManualBloco').hidden = !base;
+    $('shopeeManual').hidden = !base;
+    $('shopeeAcaoErro').hidden = true;
+    if (!base) return;
+    $('shopeeManualTexto').textContent = c.manual
+      ? 'Finalizado manualmente por ' + c.manual.por + ' em ' + c.manual.em + '. Fora do tracking; aparece como finalizado no Acompanhamento - OUT.'
+      : 'Sem ação manual. "Forçar finalizado" move o pedido para Finalizados e tira o protocolo do tracking (pode ser desfeito).';
+    $('shopeeDuplicidade').textContent = c.duplicidade
+      ? 'Possível duplicidade: o protocolo ' + c.duplicidade + ' do mesmo pedido já foi entregue e entrou na lista (ou foi finalizado manualmente).' : '';
+    $('shopeeDuplicidade').hidden = !c.duplicidade;
+    $('shopeeManualRotulo').textContent = c.manual ? 'Desfazer finalização' : 'Forçar finalizado';
+    $('shopeeIconeForcar').hidden = !!c.manual;
+    $('shopeeIconeDesfazer').hidden = !c.manual;
+    $('shopeeManual').disabled = !c.protocolo;
+  }
+
+  function acaoManual() {
+    var c = estado.aberto;
+    if (!c || c.tipo !== 'base' || !window.DadosPainel) return;
+    var protocolo = c.protocolo, botao = $('shopeeManual');
+    botao.disabled = true;
+    $('shopeeManualRotulo').textContent = 'Salvando…';
+    $('shopeeAcaoErro').hidden = true;
+    DadosPainel.acaoManual(protocolo, c.manual ? 'desfazer' : 'finalizar').then(function () {
+      // a tela já foi redesenhada: reabre a janela com o cartão atualizado
+      var novo = (estado.dados ? estado.dados.cartoes : []).filter(function (x) { return x.tipo === 'base' && x.protocolo === protocolo; })[0];
+      if (novo && !$('shopeeFundo').hidden) abrirDetalhes(novo, document.querySelector('[data-cartao="' + novo.i + '"]') || estado.origem);
+    }).catch(function (e) {
+      botao.disabled = false;
+      $('shopeeManualRotulo').textContent = c.manual ? 'Desfazer finalização' : 'Forçar finalizado';
+      $('shopeeAcaoErro').textContent = 'Não foi possível salvar: ' + (e && e.message ? e.message : e);
+      $('shopeeAcaoErro').hidden = false;
+    });
   }
 
   function fecharDetalhes(devolverFoco) {
@@ -248,6 +292,7 @@
       if (b) abrirDetalhes(estado.dados.cartoes[Number(b.getAttribute('data-cartao'))], b);
     });
     $('shopeeConsultar').addEventListener('click', consultarAgora);
+    $('shopeeManual').addEventListener('click', acaoManual);
     document.querySelector('[data-fechar-shopee]').addEventListener('click', function () { fecharDetalhes(); });
     $('shopeeFundo').addEventListener('click', function (e) { if (e.target === $('shopeeFundo')) fecharDetalhes(); });
     document.addEventListener('keydown', function (e) { if (e.key === 'Escape') fecharDetalhes(); });

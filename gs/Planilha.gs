@@ -173,8 +173,11 @@ function atualizar_(reprocessar, automatico, origem) {
   const primeiro = cursorDaAba ? Math.max(0, Number(props.getProperty(CURSOR_PROP) || 0) - (cab + 1)) : 0;
   props.setProperty(CURSOR_ABA_PROP, aba.getName());
   const comJadlog = intelipostConfigurado_() && !!dados.protocolos;
+  // finalizados manualmente no painel (gs/EstadoManual) saem do tracking, também no "Reprocessar todas"
+  const manuais = dados.protocolos ? protocolosFinalizadosManualmente_() : {};
   const pendentes = [];
   for (let i = primeiro; i < total; i++) {
+    if (dados.protocolos && manuais[chavePainel_(dados.protocolos[i][0], dados.fuso)]) continue;
     const tipo = classificarCodigo_(codigos[i][0]);
     const consultavel = tipo === TIPO_CODIGO.AUTORIZACAO || tipo === TIPO_CODIGO.RASTREIO ||
       (tipo === TIPO_CODIGO.JADLOG && comJadlog && !!codigoIntelipost_(dados.protocolos[i][0]));
