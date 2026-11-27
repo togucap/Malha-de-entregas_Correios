@@ -220,12 +220,13 @@
     var origem = norm(cfg.pendente.origem), situacao = norm(cfg.pendente.situacao);
     Array.from(st.retorno.values()).forEach(function (r) {
       var l = { shopee: v(r, ir, 'Pedido_Shopee'), pedido: v(r, ir, 'Pedido'), situacao: v(r, ir, 'situacao'), prazo: v(r, ir, 'prazo'),
-        origem: v(r, ir, 'origem'), statusSolicitacao: v(r, ir, 'statusSolicitacao') };
+        origem: v(r, ir, 'origem'), statusSolicitacao: v(r, ir, 'statusSolicitacao'),
+        contestacao: v(r, ir, 'contestacao'), link: v(r, ir, 'link') };
       if (!l.shopee) return;
       if (norm(l.origem) !== origem || norm(l.situacao) !== situacao) { foraDoQuadro++; return; }
       var b = porParceiro[chave(l.shopee)] || porPedido[chave(l.pedido)] || null;
       cartoes.push({ coluna: 'pendente', tipo: 'retorno', titulo: l.shopee, pedido: l.pedido, prazo: l.prazo,
-        statusSolicitacao: l.statusSolicitacao, situacao: l.situacao, tracking: tracking(b) });
+        statusSolicitacao: l.statusSolicitacao, situacao: l.situacao, contestacao: l.contestacao, link: l.link, tracking: tracking(b) });
     });
 
     var parceiro = norm(cfg.parceiroShopee);

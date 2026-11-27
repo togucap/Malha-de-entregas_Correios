@@ -31,7 +31,7 @@ const PAINEL_DADOS = {
   CABECALHO_REGISTRO: ['nº', 'quando', 'conjunto', 'ação', 'chave', 'dados', 'origem'],
   DIAS_FINALIZADOS: 25,
   PARCEIROS_SEM_CORTE: ['SHOPEE'], // finalizados sem "Sim" na Entrada_Lista continuam (pendência do operacional)
-  COLUNAS_RETORNO: ['Pedido_Shopee', 'Pedido', 'situacao', 'prazo', 'origem', 'statusSolicitacao'],
+  COLUNAS_RETORNO: ['Pedido_Shopee', 'Pedido', 'situacao', 'prazo', 'origem', 'statusSolicitacao', 'contestacao', 'link'],
   PEDACO: 45000,              // caracteres por célula (limite do Sheets: 50 mil)
   MAX_LINHAS_EDICAO: 300,     // edição maior que isso (ex.: colar um bloco) pede regeneração em vez de registrar linha a linha
   VERSAO_PROP: 'PAINEL_JSON_VERSAO',
